@@ -31,6 +31,9 @@ let lobbyRenderer,lobbyScene,lobbyCamera,lobbyFighter;
 const lobbyFighters=new Map();
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
 const weaponDescriptions={ar:'Balanced / medium range',shotgun:'Heavy / close range',sniper:'Precision / long range',smg:'Fast / mobile'};
+// Shared sensitivity keeps captured and embedded-browser mouse look consistent.
+const LOOK_RADIANS_PER_PIXEL=.00656;
+const EDGE_TURN_RADIANS_PER_SECOND=5.6;
 const colliders=[];
 const shotBlockers=[];
 const materials=new Map();
@@ -75,7 +78,7 @@ function initWorld(){
   scene=new THREE.Scene();scene.background=new THREE.Color(0x82c9e8);scene.fog=new THREE.Fog(0x92c9dc,55,125);
   camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,160);camera.position.set(0,1.7,12);
   renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=.82;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
+  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=LOOK_RADIANS_PER_PIXEL/.002;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
   document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
   scene.add(new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2));const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
@@ -251,15 +254,15 @@ function handleMouseLook(e){
   const dx=Number.isFinite(e.movementX)?e.movementX:(state.mouseX===null?0:e.clientX-state.mouseX);
   const dy=Number.isFinite(e.movementY)?e.movementY:(state.mouseY===null?0:e.clientY-state.mouseY);
   state.mouseX=e.clientX;state.mouseY=e.clientY;
-  camera.rotation.y-=clamp(dx,-120,120)*.00164;
-  camera.rotation.x=clamp(camera.rotation.x-clamp(dy,-120,120)*.00164,-1.45,1.45);
+  camera.rotation.y-=clamp(dx,-120,120)*LOOK_RADIANS_PER_PIXEL;
+  camera.rotation.x=clamp(camera.rotation.x-clamp(dy,-120,120)*LOOK_RADIANS_PER_PIXEL,-1.45,1.45);
 }
 // Embedded browsers may deny mouse capture. Turning at the edges still allows 360° aiming.
 function updateMouseEdgeTurn(dt){
   if(!isPlaying()||controls.isLocked||!state.mouseOver||state.mouseX===null)return;
-  const edge=36,x=state.mouseX;
-  if(x<edge)camera.rotation.y+=(1-x/edge)*1.6*dt;
-  else if(x>innerWidth-edge)camera.rotation.y-=(1-(innerWidth-x)/edge)*1.6*dt;
+  const edge=Math.min(100,innerWidth*.12),x=clamp(state.mouseX,0,innerWidth);
+  if(x<edge)camera.rotation.y+=(1-x/edge)*EDGE_TURN_RADIANS_PER_SECOND*dt;
+  else if(x>innerWidth-edge)camera.rotation.y-=(1-(innerWidth-x)/edge)*EDGE_TURN_RADIANS_PER_SECOND*dt;
 }
 function requestMouseCapture(){
   if(isPlaying())focusGame();
