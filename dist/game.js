@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
-import { createWoodenCharacter } from './wooden-character.js?v=detail-6';
+import { createWoodenCharacter } from './wooden-character.js?v=character-9-final';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 
 const $ = (id) => document.getElementById(id);
@@ -119,7 +119,7 @@ function updateWeaponModel(){const w=WEAPONS[state.selectedWeapon];weaponModel.u
 function createPlayerMesh(p,register=true){
   const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
   if(c.shape==='wooden'){
-    const avatar=createWoodenCharacter();g.add(avatar);g.userData.avatar=avatar;
+    const avatar=createWoodenCharacter(register?'game':'preview');g.add(avatar);g.userData.avatar=avatar;
   }else{
   const body=new THREE.Mesh(new THREE.CapsuleGeometry(.52,.9,5,9),mat(c.color));body.position.y=1.05;body.castShadow=true;body.userData.playerId=p.id;g.add(body);
   const head=new THREE.Mesh(new THREE.SphereGeometry(.52,14,10),mat(c.color));head.position.y=2.05;head.castShadow=true;head.userData.playerId=p.id;g.add(head);
