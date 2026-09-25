@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-import { detailPlaza } from './plaza.js?v=plaza-4';
-import { createWoodenCharacter } from './wooden-character.js?v=character-5';
+import { detailPlaza } from './plaza.js?v=detail-6';
+import { createWoodenCharacter } from './wooden-character.js?v=detail-6';
+import { mergeRigidParts } from './surface-details.js?v=detail-6';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
@@ -65,7 +66,23 @@ function makePlaza(){
   [[-26,-18],[25,-23],[-28,27],[29,29],[-10,31],[13,-31]].forEach(([x,z],i)=>{box(x,1.3,z,3.8,2.6,3.8,i%2?0x57c5be:0xe74831);box(x+.8,3,z-.4,2.2,1.5,2.2,0xf2b84b)});
   detailPlaza({world,box,mat,shotBlockers,colliders,buildings});
 }
-function makeWeapon(){weaponModel=new THREE.Group();camera.add(weaponModel);scene.add(camera);const body=new THREE.Mesh(new THREE.BoxGeometry(.18,.17,.75),mat(WEAPONS.ar.color,.45));body.position.set(.34,-.28,-.62);weaponModel.add(body);const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.035,.045,.48,8),mat(0x2f2b2e,.35));barrel.rotation.x=Math.PI/2;barrel.position.set(.34,-.25,-1.15);weaponModel.add(barrel);weaponModel.userData.body=body}
+function makeWeapon(){
+  weaponModel=new THREE.Group();camera.add(weaponModel);scene.add(camera);
+  const part=(x,y,z,sx,sy,sz,color)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(color,.45));m.position.set(x,y,z);weaponModel.add(m);return m};
+  const body=part(.34,-.28,-.62,.18,.17,.75,WEAPONS.ar.color);weaponModel.userData.body=body;
+  part(.34,-.245,-1,.145,.10,.15,0x343c3b);
+  part(.34,-.43,-.54,.1,.23,.18,0x343c3b).rotation.x=-.18;
+  part(.34,-.42,-.27,.1,.24,.13,0x45443b).rotation.x=.2;
+  part(.34,-.275,-.13,.15,.16,.22,0x343c3b);
+  part(.34,-.184,-.63,.07,.035,.48,0x343c3b);
+  for(let n=0;n<6;n++)part(.34,-.16,-.43-n*.067,.095,.017,.014,0x626962);
+  part(.34,-.135,-.81,.016,.07,.03,0x343c3b);
+  part(.34,-.103,-.81,.012,.014,.033,0xf2b84b);
+  part(.447,-.285,-.42,.044,.025,.065,0x626962);
+  part(.245,-.27,-.61,.017,.055,.2,0x343c3b);
+  for(const [z,r,length] of [[-1.14,.03,.28],[-1.32,.045,.10]]){const barrel=new THREE.Mesh(new THREE.CylinderGeometry(r,r,length,10),mat(0x2f2b2e,.35));barrel.rotation.x=Math.PI/2;barrel.position.set(.34,-.25,z);weaponModel.add(barrel)}
+  mergeRigidParts(weaponModel);
+}
 function updateWeaponModel(){const w=WEAPONS[state.selectedWeapon];weaponModel.userData.body.material=mat(w.color,.45);$('weapon-name').textContent=w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent=state.reserve}
 
 function createPlayerMesh(p){

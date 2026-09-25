@@ -1,7 +1,11 @@
 import * as THREE from 'three';
+import { surfaceTexture } from './surface-details.js?v=detail-6';
 
 // All props share the game's collision and shot-blocking geometry.
 export function detailPlaza({world,box,mat,shotBlockers,colliders,buildings}) {
+  for(const color of [0xffffff,0xc6ae86,0xe9dfc8,0xe8d8b3,0xcaae85]){mat(color).map=surfaceTexture('stone');mat(color).needsUpdate=true}
+  for(const color of [0x916847,0xcda06a,0x826347,0x704c33,0xc9a473,0x7c4e37,0x9d7549]){mat(color).map=surfaceTexture('grain');mat(color).needsUpdate=true}
+  for(const color of [0xb94332,0x367875,0xffefcc]){mat(color).map=surfaceTexture('fabric');mat(color).needsUpdate=true}
   const mesh=(geometry,color,x,y,z,solid=false)=>{
     const m=new THREE.Mesh(geometry,mat(color));m.position.set(x,y,z);
     m.castShadow=true;m.receiveShadow=true;world.add(m);if(solid)shotBlockers.push(m);return m;
@@ -43,10 +47,14 @@ export function detailPlaza({world,box,mat,shotBlockers,colliders,buildings}) {
       place(u,wy,.32,.1,.09,2.22,0xefe2be);
       place(u,wy,.32,1.85,.09,.1,0xefe2be);
       for(const dir of [-1,1])place(u+dir*1.45,wy,.15,.55,.22,2.8,i%2?0x385d4f:0x427f86);
+      for(const dir of [-1,1])for(let slat=-1;slat<=1;slat++)place(u+dir*1.45,wy+slat*.66,.29,.5,.06,.06,0xefe2be);
       place(u,wy-1.52,.42,2.9,.85,.22,0xcaae85);
-      if(wy<6){place(u,wy-1.26,.46,2,.55,.35,0xa34d35);for(let j=-1;j<=1;j++)place(u+j*.5,wy-.94,.46,.5,.48,.4,0x476b3c)}
+      if(wy<6){place(u,wy-1.26,.46,2,.55,.35,0xa34d35);for(let j=-1;j<=1;j++){place(u+j*.5,wy-.94,.46,.5,.48,.4,0x476b3c);place(u+j*.5,wy-.69,.49,.18,.22,.12,i%2?0xf2b84b:0xe97b9c)}}
     }
     place(0,1.75,.12,3,.18,3.5,0x5e4034);place(0,1.75,.26,.08,.12,3.2,0xc9ad79);
+    place(0,.11,.28,3.6,.7,.22,0xcaae85);
+    for(const du of [-.76,.76]){place(du,1,.24,1.02,.07,.9,0x916847);place(du,2.43,.24,1.02,.07,1.3,0x916847);place(du*.25,1.65,.31,.09,.08,.24,0xc9ad79)}
+    for(let u=-span/2+1.5;u<span/2;u+=3)place(u,sy-1.18,.12,.38,.35,.45,0xffecc5);
     for(let stripe=0;stripe<8;stripe++)place(-2.625+stripe*.75,3.8,1, .75,2.4,.18,stripe%2?0xfff5d8:(i%2?0x367875:0xb94332));
     const yaw=side?(-signDir*Math.PI/2):(signDir>0?Math.PI:0);
     sign(facades[i],side?front-signDir*.4:x,4.65,side?z:front-signDir*.4,7,yaw);
@@ -121,6 +129,10 @@ export function detailPlaza({world,box,mat,shotBlockers,colliders,buildings}) {
     for(let n=0;n<points.length;n+=3){const p=points[n];const light=mesh(new THREE.SphereGeometry(.14,6,5),0xffdda0,p.x,p.y-.2,p.z);light.material=new THREE.MeshBasicMaterial({color:0xffdfa0})}
   }
   const rim=mesh(new THREE.TorusGeometry(5.25,.2,7,32),0xf2e2ba,0,1.07,1,true);rim.rotation.x=Math.PI/2;
+  for(let i=0;i<20;i++){
+    const a=i/20*Math.PI*2;
+    const joint=mesh(new THREE.BoxGeometry(.028,.65,.2),0xa58963,Math.sin(a)*5.48,.67,1+Math.cos(a)*5.48);joint.rotation.y=a;
+  }
   cylinder(0,3.75,1,1.5,.22,0xe5d7b1,true);
   batchStaticProps(world,shotBlockers);
   world.updateMatrixWorld(true);
