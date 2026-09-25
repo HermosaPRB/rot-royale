@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Rot Royale is a fast, coffee-splattered multiplayer arena shooter set in a chaotic Italian plaza.">
+  <title>Rot Royale</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <main id="app">
+    <canvas id="game" aria-label="Rot Royale game arena"></canvas>
+
+    <section id="home" class="screen active" aria-labelledby="logo-title">
+      <div class="home-shell">
+        <header class="brand-block">
+          <div class="eyebrow">A VERY SERIOUS PLAZA INCIDENT</div>
+          <h1 id="logo-title"><span>ROT</span> ROYALE</h1>
+          <p>Three minutes. Unlimited respawns. Most eliminations wins.</p>
+        </header>
+
+        <div class="setup-grid">
+          <section class="panel identity-panel">
+            <div class="step-label">01 / YOUR FIGHTER</div>
+            <label class="field-label" for="player-name">Display name</label>
+            <input id="player-name" maxlength="16" value="EspressoKid" autocomplete="off">
+            <div id="character-list" class="choice-grid characters" role="radiogroup" aria-label="Choose character"></div>
+          </section>
+
+          <section class="panel loadout-panel">
+            <div class="step-label">02 / YOUR PRESET</div>
+            <div id="weapon-list" class="weapon-list" role="radiogroup" aria-label="Choose weapon"></div>
+          </section>
+
+          <section class="panel room-panel">
+            <div class="step-label">03 / ENTER THE PLAZA</div>
+            <button id="create-room" class="primary">Create room <span>→</span></button>
+            <div class="or"><span>or join a friend</span></div>
+            <div class="join-row">
+              <input id="room-code-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off" aria-label="Room code">
+              <button id="join-room">Join</button>
+            </div>
+            <button id="practice" class="text-button">Practice alone first</button>
+            <p id="connection-error" class="error" role="alert"></p>
+          </section>
+        </div>
+
+        <aside class="rules-strip" aria-label="How to play">
+          <strong>HOW TO PLAY</strong>
+          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> aim</span><span><kbd>CLICK</kbd> fire</span><span><kbd>R</kbd> reload</span><span><kbd>SPACE</kbd> jump</span><span><kbd>ESC</kbd> menu</span>
+        </aside>
+      </div>
+    </section>
+
+    <section id="lobby" class="screen" aria-labelledby="lobby-title">
+      <div class="modal-card lobby-card">
+        <div class="eyebrow">PRIVATE MATCH</div>
+        <h2 id="lobby-title">The piazza is warming up.</h2>
+        <p>Send this code to your friends. The host starts when everyone arrives.</p>
+        <button id="copy-code" class="room-code" aria-label="Copy room code"><span id="room-code">------</span><small>CLICK TO COPY</small></button>
+        <div id="player-list" class="player-list"></div>
+        <button id="start-match" class="primary" disabled>Waiting for another player…</button>
+        <button id="leave-lobby" class="text-button">Leave room</button>
+      </div>
+    </section>
+
+    <section id="pause" class="screen" aria-labelledby="pause-title">
+      <div class="modal-card small-card">
+        <div class="eyebrow">TIMEOUT</div>
+        <h2 id="pause-title">Back to the chaos?</h2>
+        <button id="resume" class="primary">Resume match</button>
+        <button id="leave-match" class="text-button">Leave match</button>
+      </div>
+    </section>
+
+    <section id="results" class="screen" aria-labelledby="result-title">
+      <div class="modal-card results-card">
+        <div class="eyebrow">MATCH COMPLETE</div>
+        <h2 id="result-title">The plaza has spoken.</h2>
+        <div id="podium" class="podium"></div>
+        <button id="play-again" class="primary">Return to lobby</button>
+        <button id="results-home" class="text-button">Main menu</button>
+      </div>
+    </section>
+
+    <section id="hud" aria-label="Game status">
+      <div class="hud-top">
+        <div class="score-chip"><small>YOUR KILLS</small><strong id="kills">0</strong></div>
+        <div class="timer"><small>PLAZA CLOSES IN</small><strong id="timer">3:00</strong></div>
+        <div class="score-chip"><small>LEADER</small><strong id="leader">0</strong></div>
+      </div>
+      <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
+      <div id="crosshair" class="crosshair"><i></i><b></b><i></i><b></b></div>
+      <div class="hud-bottom">
+        <div class="health-wrap"><span id="health-number">100</span><div class="health-track"><div id="health-bar"></div></div><small>ESPRESSO</small></div>
+        <div class="weapon-hud"><small id="weapon-name">AR</small><strong><span id="ammo">30</span><em>/</em><span id="reserve">90</span></strong></div>
+      </div>
+      <div id="hitmarker" class="hitmarker">×</div>
+      <div id="damage-flash"></div>
+      <div id="respawn" class="respawn"><strong>Cooling the espresso…</strong><span id="respawn-time">3</span></div>
+    </section>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script type="module" src="./game.js"></script>
+</body>
+</html>
