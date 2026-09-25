@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { detailPlaza } from './plaza.js?v=plaza-4';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
@@ -20,11 +21,13 @@ const state = {
   mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
   players:{},selectedChar:'panino',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,
   ammo:30,reserve:90,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
-  draggingLook:false,pointerLockFailed:false,capturePending:false
+  pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false
 };
 
 let scene,camera,renderer,controls,clock,world,playerMeshes=new Map(),raycaster,weaponModel;
 const colliders=[];
+const shotBlockers=[];
+const materials=new Map();
 
 function showScreen(id){ screens.forEach(s=>$(s).classList.toggle('active',s===id)); }
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),1700)}
@@ -48,23 +51,21 @@ function initWorld(){
   scene.add(new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2));const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
   makePlaza();makeWeapon();window.addEventListener('resize',resize);animate();
 }
-function mat(color,rough=.82){return new THREE.MeshStandardMaterial({color,roughness:rough})}
-function box(x,y,z,sx,sy,sz,color,collide=true){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(color));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;world.add(m);if(collide)colliders.push({minX:x-sx/2,maxX:x+sx/2,minZ:z-sz/2,maxZ:z+sz/2});return m}
+function mat(color,rough=.82){const key=`${color}:${rough}`;if(!materials.has(key))materials.set(key,new THREE.MeshStandardMaterial({color,roughness:rough}));return materials.get(key)}
+function box(x,y,z,sx,sy,sz,color,collide=true){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(color));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;world.add(m);shotBlockers.push(m);if(collide)colliders.push({minX:x-sx/2,maxX:x+sx/2,minZ:z-sz/2,maxZ:z+sz/2});return m}
 function makePlaza(){
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(110,110),new THREE.MeshStandardMaterial({color:0xd9b878,roughness:1}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;world.add(ground);
-  const tile=new THREE.GridHelper(110,44,0x9b7650,0xcaa66f);tile.position.y=.012;world.add(tile);
   const buildings=[[-42,8,-28,20,16,28,0xf09b68],[-41,10,16,22,20,24,0xe7c079],[-18,8,-45,26,16,18,0xe86b4f],[18,9,-46,30,18,18,0xf0c879],[44,9,-25,18,18,27,0xd87c69],[43,7,18,22,14,25,0xf2a85c],[-23,9,45,28,18,18,0xe9bd72],[20,8,46,28,16,18,0xd46f55]];
-  buildings.forEach(([x,y,z,sx,sy,sz,c],i)=>{box(x,y,z,sx,sy,sz,c);for(let wy=4;wy<sy-2;wy+=5)for(let wx=-sx/2+4;wx<sx/2-2;wx+=5){const win=box(x+wx,wy,z-(Math.sign(z)||1)*(sz/2+.03),2.4,2.5,.08,0x3c6f85,false);win.material.emissive=new THREE.Color(0x143342)} const roof=box(x,sy+.35,z,sx+1,.7,sz+1,i%2?0x8c3931:0xb64c39,false);});
+  buildings.forEach(([x,y,z,sx,sy,sz,c],i)=>{box(x,y,z,sx,sy,sz,c);box(x,sy+.35,z,sx+1,.7,sz+1,i%2?0x8c3931:0xb64c39,false)});
   [[-12,-10],[14,-13],[-18,15],[19,17]].forEach(([x,z],i)=>{const canopy=box(x,2.7,z,8,.35,5,i%2?0xe74831:0x57c5be,false);for(let n=-1;n<=1;n+=2)box(x+n*3.2,1.3,z+n*.2,.16,2.7,.16,0x4e3329,false)});
   // Fountain and useful cover.
-  const basin=new THREE.Mesh(new THREE.CylinderGeometry(5.5,6,1,24),mat(0xe9dfc8));basin.position.set(0,.45,1);basin.castShadow=true;world.add(basin);colliders.push({minX:-5.6,maxX:5.6,minZ:-4.6,maxZ:6.6});
+  const basin=new THREE.Mesh(new THREE.CylinderGeometry(5.5,6,1,24),mat(0xe9dfc8));basin.position.set(0,.45,1);basin.castShadow=true;world.add(basin);shotBlockers.push(basin);colliders.push({minX:-5.6,maxX:5.6,minZ:-4.6,maxZ:6.6});
   const water=new THREE.Mesh(new THREE.CylinderGeometry(4.8,4.8,.12,24),new THREE.MeshStandardMaterial({color:0x52bed0,metalness:.1,roughness:.2}));water.position.set(0,1,1);world.add(water);box(0,2.3,1,1.1,3.1,1.1,0xe9dfc8,false);
   [[-26,-18],[25,-23],[-28,27],[29,29],[-10,31],[13,-31]].forEach(([x,z],i)=>{box(x,1.3,z,3.8,2.6,3.8,i%2?0x57c5be:0xe74831);box(x+.8,3,z-.4,2.2,1.5,2.2,0xf2b84b)});
-  // warm string lights
-  for(let i=-35;i<=35;i+=5){const bulb=new THREE.Mesh(new THREE.SphereGeometry(.18,8,8),new THREE.MeshBasicMaterial({color:0xffe27c}));bulb.position.set(i,8,0);world.add(bulb)}
+  detailPlaza({world,box,mat,shotBlockers,colliders,buildings});
 }
 function makeWeapon(){weaponModel=new THREE.Group();camera.add(weaponModel);scene.add(camera);const body=new THREE.Mesh(new THREE.BoxGeometry(.18,.17,.75),mat(WEAPONS.ar.color,.45));body.position.set(.34,-.28,-.62);weaponModel.add(body);const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.035,.045,.48,8),mat(0x2f2b2e,.35));barrel.rotation.x=Math.PI/2;barrel.position.set(.34,-.25,-1.15);weaponModel.add(barrel);weaponModel.userData.body=body}
-function updateWeaponModel(){const w=WEAPONS[state.selectedWeapon];weaponModel.userData.body.material.color.setHex(w.color);$('weapon-name').textContent=w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent=state.reserve}
+function updateWeaponModel(){const w=WEAPONS[state.selectedWeapon];weaponModel.userData.body.material=mat(w.color,.45);$('weapon-name').textContent=w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent=state.reserve}
 
 function createPlayerMesh(p){
   const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
@@ -149,9 +150,19 @@ function doRespawn(x,z){state.alive=true;state.health=100;camera.position.set(x?
 function flashDamage(){$('damage-flash').classList.add('show');setTimeout(()=>$('damage-flash').classList.remove('show'),190)}
 
 function shoot(){
-  if(!state.matchActive||!state.alive||state.reloading)return;const w=WEAPONS[state.selectedWeapon],now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponModel.position.z=.1;setTimeout(()=>weaponModel.position.z=0,55);
-  let hitAny=false,best=null;for(let n=0;n<w.pellets;n++){const dir=new THREE.Vector3((Math.random()-.5)*w.spread,(Math.random()-.5)*w.spread,-1).normalize().applyQuaternion(camera.quaternion);raycaster.set(camera.position,dir);raycaster.far=w.range;const targets=[];playerMeshes.forEach(m=>{if(m.visible)m.children.forEach(c=>{if(c.isMesh)targets.push(c)})});const hits=raycaster.intersectObjects(targets,false);if(hits[0]){const id=hits[0].object.userData.playerId;if(id&&(!best||hits[0].distance<best.distance))best={id,distance:hits[0].distance};hitAny=true}}
-  if(best){sendHost({t:'hit',target:best.id,damage:w.damage*w.pellets});$('hitmarker').classList.add('show');setTimeout(()=>$('hitmarker').classList.remove('show'),120)}
+  if(!isPlaying()||state.reloading)return;const w=WEAPONS[state.selectedWeapon],now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponModel.position.z=.1;setTimeout(()=>weaponModel.position.z=0,55);
+  const targets=[...shotBlockers],damageByPlayer=new Map();
+  playerMeshes.forEach(m=>{if(m.visible)m.children.forEach(c=>{if(c.isMesh){c.userData.playerId=m.userData.playerId;targets.push(c)}})});
+  world.updateMatrixWorld(true);
+  for(let n=0;n<w.pellets;n++){
+    const dir=new THREE.Vector3((Math.random()-.5)*w.spread,(Math.random()-.5)*w.spread,-1).normalize().applyQuaternion(camera.quaternion);
+    raycaster.set(camera.position,dir);raycaster.far=w.range;
+    const first=raycaster.intersectObjects(targets,false)[0];
+    // The nearest surface receives the pellet: a wall cannot be shot through.
+    const id=first?.object.userData.playerId;if(id)damageByPlayer.set(id,(damageByPlayer.get(id)||0)+w.damage);
+  }
+  for(const [target,damage] of damageByPlayer)sendHost({t:'hit',target,damage});
+  if(damageByPlayer.size){$('hitmarker').classList.add('show');setTimeout(()=>$('hitmarker').classList.remove('show'),120)}
   if(state.ammo===0)setTimeout(reload,160);
 }
 function reload(){const w=WEAPONS[state.selectedWeapon];if(state.reloading||state.ammo>=w.mag||state.reserve<=0)return;state.reloading=true;$('weapon-name').textContent='RELOADING…';setTimeout(()=>{const need=w.mag-state.ammo,take=Math.min(need,state.reserve);state.ammo+=take;state.reserve-=take;state.reloading=false;updateWeaponModel()},w.reload)}
@@ -163,7 +174,8 @@ function updateMovement(dt){
   state.velocityY-=22*dt;camera.position.y+=state.velocityY*dt;if(camera.position.y<=1.7){camera.position.y=1.7;state.velocityY=0;state.onGround=true}
 }
 function collides(x,z){return colliders.some(c=>x>c.minX-.55&&x<c.maxX+.55&&z>c.minZ-.55&&z<c.maxZ+.55)}
-function updateBots(dt){if(!state.practice||!state.matchActive)return;Object.values(state.players).filter(p=>p.bot&&p.alive).forEach((p,i)=>{const a=performance.now()/2300+i*2.1;p.x+=Math.sin(a)*dt*2.3;p.z+=Math.cos(a*1.2)*dt*2.3;p.x=clamp(p.x,-31,31);p.z=clamp(p.z,-31,31);p.yaw=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);if(Math.random()<dt*.28){const d=Math.hypot(camera.position.x-p.x,camera.position.z-p.z);if(d<35)applyHit(p.id,state.id,10)}})}
+function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
+function updateBots(dt){if(!state.practice||!state.matchActive)return;Object.values(state.players).filter(p=>p.bot&&p.alive).forEach((p,i)=>{const a=performance.now()/2300+i*2.1,nextX=clamp(p.x+Math.sin(a)*dt*2.3,-31,31),nextZ=clamp(p.z+Math.cos(a*1.2)*dt*2.3,-31,31);if(!collides(nextX,p.z))p.x=nextX;if(!collides(p.x,nextZ))p.z=nextZ;p.yaw=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);if(Math.random()<dt*.28){const d=Math.hypot(camera.position.x-p.x,camera.position.z-p.z);if(d<35&&state.alive&&hasClearShot(new THREE.Vector3(p.x,1.7,p.z),camera.position))applyHit(p.id,state.id,10)}})}
 function updateNetwork(now){if(now-state.lastNet<65)return;state.lastNet=now;if(state.host)hostSnapshot();else sendHost({t:'state',x:camera.position.x,z:camera.position.z,yaw:camera.rotation.y})}
 function updateTimer(){if(!state.matchActive)return;const left=Math.max(0,state.matchEnd-Date.now()),s=Math.ceil(left/1000);$('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;if(left<=0&&state.host)finishMatch(state.players)}
 function finishMatch(players){if(!state.matchActive)return;state.matchActive=false;controls.unlock();$('hud').classList.remove('active');const ranked=Object.values(players||state.players).sort((a,b)=>(b.kills||0)-(a.kills||0));$('podium').innerHTML=ranked.map((p,i)=>`<div class="rank-row"><span>#${i+1}</span><span>${escapeHtml(p.name)}</span><strong>${p.kills||0} K</strong></div>`).join('');showScreen('results');state.mode='results';if(state.host)broadcast({t:'end',players:state.players})}
@@ -171,16 +183,32 @@ function returnLobby(){if(state.practice){leaveToHome();return}Object.values(sta
 
 function updateHud(){const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent=state.reserve;const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top}
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
-function spawnFor(i){const pts=[[-25,-25],[25,25],[-25,25],[25,-25],[0,29],[0,-29]];const p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();if(state.matchActive){updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes();updateHud()}renderer.render(scene,camera)}
+function spawnFor(i){const pts=[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]];const p=pts[i%pts.length];return{x:p[0],z:p[1]}}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();if(state.matchActive){updateMouseEdgeTurn(dt);updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes();updateHud()}renderer.render(scene,camera)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){state.keys={};state.draggingLook=false}
+function clearInput(){state.keys={};state.mouseX=null;state.mouseY=null;state.mouseOver=false}
 function focusGame(){$('game').focus({preventScroll:true})}
-function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='WASD MOVE · DRAG TO LOOK · CLICK FIRE · ESC MENU';$('control-hint').classList.remove('hidden')}
+function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='WASD MOVE · MOUSE LOOK · SCREEN EDGES TURN · ESC MENU';$('control-hint').classList.remove('hidden')}
+function handleMouseLook(e){
+  if(!isPlaying()||controls.isLocked||e.target!==$('game'))return;
+  state.mouseOver=true;
+  const dx=Number.isFinite(e.movementX)?e.movementX:(state.mouseX===null?0:e.clientX-state.mouseX);
+  const dy=Number.isFinite(e.movementY)?e.movementY:(state.mouseY===null?0:e.clientY-state.mouseY);
+  state.mouseX=e.clientX;state.mouseY=e.clientY;
+  camera.rotation.y-=clamp(dx,-120,120)*.00164;
+  camera.rotation.x=clamp(camera.rotation.x-clamp(dy,-120,120)*.00164,-1.45,1.45);
+}
+// Embedded browsers may deny mouse capture. Turning at the edges still allows 360° aiming.
+function updateMouseEdgeTurn(dt){
+  if(!isPlaying()||controls.isLocked||!state.mouseOver||state.mouseX===null)return;
+  const edge=36,x=state.mouseX;
+  if(x<edge)camera.rotation.y+=(1-x/edge)*1.6*dt;
+  else if(x>innerWidth-edge)camera.rotation.y-=(1-(innerWidth-x)/edge)*1.6*dt;
+}
 function requestMouseCapture(){
   if(isPlaying())focusGame();
   if(!isPlaying()||state.pointerLockFailed||state.capturePending||controls.isLocked)return;
@@ -192,7 +220,7 @@ function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput(
 
 addEventListener('keydown',e=>{if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='Space'&&state.onGround&&!e.repeat){state.velocityY=8;state.onGround=false}if(e.code==='KeyR')reload()});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
-addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===0){focusGame();state.draggingLook=true;if(!controls.isLocked)requestMouseCapture();shoot()}});addEventListener('mouseup',()=>state.draggingLook=false);addEventListener('mousemove',e=>{if(!isPlaying()||controls?.isLocked||!state.draggingLook)return;camera.rotation.y-=e.movementX*.004;camera.rotation.x=clamp(camera.rotation.x-e.movementY*.004,-1.45,1.45)});
+addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();shoot()}});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 buildChoices();initWorld();showScreen('home');
