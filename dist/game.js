@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=plaza-4';
+import { createWoodenCharacter } from './wooden-character.js?v=character-5';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
 const CHARACTERS = [
-  {id:'panino',name:'Ballerino Panino',emoji:'🥖',color:0xf2b84b,shape:'bread'},
+  {id:'wooden',name:'Wooden Bonker',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
   {id:'croco',name:'Croco Macchiato',emoji:'🐊',color:0x57c5be,shape:'croco'},
   {id:'mozza',name:'Signora Mozza',emoji:'🧀',color:0xffeee0,shape:'cheese'},
   {id:'gabbiano',name:'Gabbiano Gelato',emoji:'🍦',color:0xe97b9c,shape:'cone'}
@@ -19,7 +20,7 @@ const WEAPONS = {
 
 const state = {
   mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
-  players:{},selectedChar:'panino',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,
+  players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,
   ammo:30,reserve:90,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
   pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false
 };
@@ -35,7 +36,7 @@ function safeName(){return ($('player-name').value.trim()||'Mysterious Rot').sli
 function roomCode(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return Array.from({length:6},()=>chars[Math.floor(Math.random()*chars.length)]).join('')}
 
 function buildChoices(){
-  $('character-list').innerHTML=CHARACTERS.map((c,i)=>`<button class="character ${i===0?'selected':''}" data-char="${c.id}" role="radio" aria-checked="${i===0}"><span class="avatar">${c.emoji}</span><small>${c.name}</small></button>`).join('');
+  $('character-list').innerHTML=CHARACTERS.map((c,i)=>`<button class="character ${i===0?'selected':''}" data-char="${c.id}" role="radio" aria-label="${c.name}${i===0?' · Default character':''}" aria-checked="${i===0}"><span class="avatar">${c.portrait?`<img src="${c.portrait}" alt="${c.name}" width="64" height="64">`:c.emoji}</span><small>${c.name}</small>${i===0?'<span class="default-label">DEFAULT</span>':''}</button>`).join('');
   $('weapon-list').innerHTML=Object.entries(WEAPONS).map(([id,w],i)=>`<button class="weapon ${i===0?'selected':''}" data-weapon="${id}" role="radio" aria-checked="${i===0}"><span class="weapon-icon">${w.icon}</span><span><strong>${w.name}</strong><small>${id==='ar'?'Balanced / medium range':id==='shotgun'?'Heavy / close range':id==='sniper'?'Precision / long range':'Fast / mobile'}</small></span><span class="stat">${w.damage}</span></button>`).join('');
   document.querySelectorAll('[data-char]').forEach(b=>b.onclick=()=>{state.selectedChar=b.dataset.char;document.querySelectorAll('[data-char]').forEach(x=>{x.classList.toggle('selected',x===b);x.setAttribute('aria-checked',x===b)})});
   document.querySelectorAll('[data-weapon]').forEach(b=>b.onclick=()=>{state.selectedWeapon=b.dataset.weapon;document.querySelectorAll('[data-weapon]').forEach(x=>{x.classList.toggle('selected',x===b);x.setAttribute('aria-checked',x===b)})});
@@ -69,14 +70,19 @@ function updateWeaponModel(){const w=WEAPONS[state.selectedWeapon];weaponModel.u
 
 function createPlayerMesh(p){
   const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
+  if(c.shape==='wooden'){
+    const avatar=createWoodenCharacter();g.add(avatar);g.userData.avatar=avatar;
+  }else{
   const body=new THREE.Mesh(new THREE.CapsuleGeometry(.52,.9,5,9),mat(c.color));body.position.y=1.05;body.castShadow=true;body.userData.playerId=p.id;g.add(body);
   const head=new THREE.Mesh(new THREE.SphereGeometry(.52,14,10),mat(c.color));head.position.y=2.05;head.castShadow=true;head.userData.playerId=p.id;g.add(head);
   const eyeMat=new THREE.MeshBasicMaterial({color:0x191218});[-.2,.2].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),eyeMat);e.position.set(x,2.12,-.48);g.add(e)});
+  }
   const gun=new THREE.Mesh(new THREE.BoxGeometry(.16,.16,.82),mat(WEAPONS[p.weapon]?.color||0x333333));gun.position.set(.45,1.25,-.45);gun.rotation.x=-.15;g.add(gun);
+  gun.userData.noHit=true;g.traverse(m=>{if(m.isMesh)m.userData.playerId=p.id});
   const tag=document.createElement('div');tag.className='name-tag';g.userData.tag=tag;world.add(g);playerMeshes.set(p.id,g);return g;
 }
 function syncMeshes(){
-  Object.values(state.players).forEach(p=>{if(p.id===state.id)return;let m=playerMeshes.get(p.id)||createPlayerMesh(p);m.visible=p.alive!==false;m.position.lerp(new THREE.Vector3(p.x||0,0,p.z||0),.32);m.rotation.y=p.yaw||0});
+  Object.values(state.players).forEach(p=>{if(p.id===state.id)return;let m=playerMeshes.get(p.id)||createPlayerMesh(p);m.visible=p.alive!==false;const motion=Math.min(.45,Math.hypot((p.x||0)-m.position.x,(p.z||0)-m.position.z)*3);m.position.lerp(new THREE.Vector3(p.x||0,0,p.z||0),.32);m.rotation.y=(p.yaw||0)+(p.bot?Math.PI:0);const avatar=m.userData.avatar;if(avatar){const phase=performance.now()/120;avatar.userData.legs.forEach((leg,i)=>leg.rotation.x=Math.sin(phase+i*Math.PI)*motion);avatar.userData.arms.forEach((arm,i)=>arm.rotation.x=Math.sin(phase+i*Math.PI)*motion*.35)}});
   for(const [id,m] of playerMeshes)if(!state.players[id]){world.remove(m);playerMeshes.delete(id)}
 }
 
@@ -99,7 +105,7 @@ function joinRoom(){
 }
 function acceptConnection(c){
   if(Object.keys(state.players).length>=6){c.on('open',()=>{c.send({t:'reject',reason:'That room is full.'});setTimeout(()=>c.close(),100)});return}
-  c.on('open',()=>{state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:(c.metadata?.name||'New Rot').slice(0,16),char:c.metadata?.char||'panino',weapon:c.metadata?.weapon||'ar',x:0,z:0,kills:0,deaths:0,health:100,alive:true};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id});broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive});updateLobby()});
+  c.on('open',()=>{state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:(c.metadata?.name||'New Rot').slice(0,16),char:c.metadata?.char||'wooden',weapon:c.metadata?.weapon||'ar',x:0,z:0,kills:0,deaths:0,health:100,alive:true};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id});broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive});updateLobby()});
   c.on('data',d=>handleHostMessage(d,c.peer));c.on('close',()=>{state.connections.delete(c.peer);delete state.players[c.peer];broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive});updateLobby()});
 }
 function wireClient(c){c.on('open',()=>setError(''));c.on('data',d=>handleClientMessage(d));c.on('close',()=>leaveToHome('The host closed the room.'));c.on('error',peerError)}
@@ -127,7 +133,7 @@ function setError(s){$('connection-error').textContent=s}
 
 function enterLobby(){state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;updateLobby()}
 function updateLobby(){
-  const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>`<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}</strong><span>${CHARACTERS.find(c=>c.id===p.char)?.emoji||'🥖'}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`).join('');
+  const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
   $('start-match').style.display=state.host?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
 }
 function startMatch(){
@@ -138,7 +144,7 @@ function beginMatch(asHost){
   const me=state.players[state.id];if(me){camera.position.set(me.x||0,1.7,me.z||12)}else camera.position.set(0,1.7,12);
   state.keys={};state.velocityY=0;state.onGround=true;camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
 }
-function practice(){state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bot Barista','Nonna.exe','Gelato NPC'][i],char:CHARACTERS[(i+1)%4].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()}
+function practice(){state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bot Barista','Nonna.exe','Gelato NPC'][i],char:CHARACTERS[i%4].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()}
 
 function applyHit(shooterId,targetId,damage){
   const target=state.players[targetId],shooter=state.players[shooterId];if(!target||!shooter||!target.alive)return;target.health=Math.max(0,target.health-Math.min(100,Math.max(1,damage||1)));
@@ -152,7 +158,7 @@ function flashDamage(){$('damage-flash').classList.add('show');setTimeout(()=>$(
 function shoot(){
   if(!isPlaying()||state.reloading)return;const w=WEAPONS[state.selectedWeapon],now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponModel.position.z=.1;setTimeout(()=>weaponModel.position.z=0,55);
   const targets=[...shotBlockers],damageByPlayer=new Map();
-  playerMeshes.forEach(m=>{if(m.visible)m.children.forEach(c=>{if(c.isMesh){c.userData.playerId=m.userData.playerId;targets.push(c)}})});
+  playerMeshes.forEach(m=>{if(m.visible)m.traverse(c=>{if(c.isMesh&&!c.userData.noHit){c.userData.playerId=m.userData.playerId;targets.push(c)}})});
   world.updateMatrixWorld(true);
   for(let n=0;n<w.pellets;n++){
     const dir=new THREE.Vector3((Math.random()-.5)*w.spread,(Math.random()-.5)*w.spread,-1).normalize().applyQuaternion(camera.quaternion);
