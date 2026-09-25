@@ -20,7 +20,7 @@ const state = {
   mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
   players:{},selectedChar:'panino',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,
   ammo:30,reserve:90,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
-  draggingLook:false,pointerLockFailed:false
+  draggingLook:false,pointerLockFailed:false,capturePending:false
 };
 
 let scene,camera,renderer,controls,clock,world,playerMeshes=new Map(),raycaster,weaponModel;
@@ -42,8 +42,8 @@ function initWorld(){
   scene=new THREE.Scene();scene.background=new THREE.Color(0x82c9e8);scene.fog=new THREE.Fog(0x92c9dc,55,125);
   camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,160);camera.position.set(0,1.7,12);
   renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=.82;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(state.matchActive&&state.alive&&!state.pointerLockFailed){showScreen('pause');state.mode='pause'}});
-  document.addEventListener('pointerlockerror',()=>{state.pointerLockFailed=true;$('control-hint').textContent='WASD TO MOVE · DRAG TO LOOK · CLICK TO FIRE';$('control-hint').classList.remove('hidden');toast('Mouse capture unavailable — drag to look instead')});
+  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=.82;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
+  document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
   scene.add(new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2));const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
   makePlaza();makeWeapon();window.addEventListener('resize',resize);animate();
@@ -135,7 +135,7 @@ function startMatch(){
 function beginMatch(asHost){
   state.matchActive=true;state.mode='game';state.health=100;state.kills=0;state.deaths=0;state.alive=true;const w=WEAPONS[state.selectedWeapon];state.ammo=w.mag;state.reserve=w.reserve;state.reloading=false;
   const me=state.players[state.id];if(me){camera.position.set(me.x||0,1.7,me.z||12)}else camera.position.set(0,1.7,12);
-  showScreen(null);$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
+  state.keys={};state.velocityY=0;state.onGround=true;camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
 }
 function practice(){state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bot Barista','Nonna.exe','Gelato NPC'][i],char:CHARACTERS[(i+1)%4].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()}
 
@@ -145,7 +145,7 @@ function applyHit(shooterId,targetId,damage){
   hostSnapshot();
 }
 function takeDamageResult(d){const me=state.players[state.id];if(me)state.health=me.health;if(d.killed){state.alive=false;$('respawn').classList.add('active');let n=3;$('respawn-time').textContent=n;const t=setInterval(()=>{$('respawn-time').textContent=--n;if(n<=0)clearInterval(t)},1000);controls.unlock()}else flashDamage();updateHud()}
-function doRespawn(x,z){state.alive=true;state.health=100;camera.position.set(x||0,1.7,z||12);$('respawn').classList.remove('active');if(state.matchActive)requestMouseCapture();updateHud()}
+function doRespawn(x,z){state.alive=true;state.health=100;camera.position.set(x??0,1.7,z??12);state.velocityY=0;state.onGround=true;state.keys={};$('respawn').classList.remove('active');if(isPlaying()){focusGame();requestMouseCapture()}updateHud()}
 function flashDamage(){$('damage-flash').classList.add('show');setTimeout(()=>$('damage-flash').classList.remove('show'),190)}
 
 function shoot(){
@@ -157,8 +157,9 @@ function shoot(){
 function reload(){const w=WEAPONS[state.selectedWeapon];if(state.reloading||state.ammo>=w.mag||state.reserve<=0)return;state.reloading=true;$('weapon-name').textContent='RELOADING…';setTimeout(()=>{const need=w.mag-state.ammo,take=Math.min(need,state.reserve);state.ammo+=take;state.reserve-=take;state.reloading=false;updateWeaponModel()},w.reload)}
 
 function updateMovement(dt){
-  if(!state.alive||state.mode!=='game')return;const speed=8.5,forwardInput=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),sideInput=(state.keys.KeyD?1:0)-(state.keys.KeyA?1:0);const old=camera.position.clone();const forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize();if(forwardInput)camera.position.addScaledVector(forward,forwardInput*speed*dt);if(sideInput)camera.position.addScaledVector(right,sideInput*speed*dt);
-  camera.position.x=clamp(camera.position.x,-34,34);camera.position.z=clamp(camera.position.z,-35,35);if(collides(camera.position.x,camera.position.z)){camera.position.x=old.x;if(collides(camera.position.x,camera.position.z))camera.position.z=old.z}
+  if(!isPlaying())return;const speed=8.5,forwardInput=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),sideInput=(state.keys.KeyD?1:0)-(state.keys.KeyA?1:0);const old=camera.position.clone();const forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize();const distance=speed*dt/Math.max(1,Math.hypot(forwardInput,sideInput));const dx=(forward.x*forwardInput+right.x*sideInput)*distance,dz=(forward.z*forwardInput+right.z*sideInput)*distance;
+  const nextX=clamp(old.x+dx,-34,34);if(!collides(nextX,old.z))camera.position.x=nextX;
+  const nextZ=clamp(old.z+dz,-35,35);if(!collides(camera.position.x,nextZ))camera.position.z=nextZ;
   state.velocityY-=22*dt;camera.position.y+=state.velocityY*dt;if(camera.position.y<=1.7){camera.position.y=1.7;state.velocityY=0;state.onGround=true}
 }
 function collides(x,z){return colliders.some(c=>x>c.minX-.55&&x<c.maxX+.55&&z>c.minZ-.55&&z<c.maxZ+.55)}
@@ -175,11 +176,23 @@ function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDel
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function leaveToHome(message=''){state.matchActive=false;state.practice=false;resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';setError(message)}
-function requestMouseCapture(){if(state.pointerLockFailed)return;try{controls.lock()}catch{state.pointerLockFailed=true;$('control-hint').textContent='WASD TO MOVE · DRAG TO LOOK · CLICK TO FIRE'}}
+function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';setError(message)}
+function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
+function clearInput(){state.keys={};state.draggingLook=false}
+function focusGame(){$('game').focus({preventScroll:true})}
+function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='WASD MOVE · DRAG TO LOOK · CLICK FIRE · ESC MENU';$('control-hint').classList.remove('hidden')}
+function requestMouseCapture(){
+  if(isPlaying())focusGame();
+  if(!isPlaying()||state.pointerLockFailed||state.capturePending||controls.isLocked)return;
+  if(!document.body.requestPointerLock){useFallbackControls();return}
+  state.capturePending=true;
+  try{const pending=document.body.requestPointerLock();if(pending?.catch)pending.catch(useFallbackControls)}catch{useFallbackControls()}
+}
+function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-addEventListener('keydown',e=>{state.keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code)&&state.matchActive)e.preventDefault();if(e.code==='Space'&&state.onGround&&state.matchActive&&state.mode==='game'){state.velocityY=8;state.onGround=false}if(e.code==='KeyR')reload()});addEventListener('keyup',e=>state.keys[e.code]=false);
-addEventListener('mousedown',e=>{if(state.mode!=='game'||!state.alive)return;if(e.button===0){state.draggingLook=true;if(!controls?.isLocked)requestMouseCapture();shoot()}});addEventListener('mouseup',()=>state.draggingLook=false);addEventListener('mousemove',e=>{if(state.mode!=='game'||controls?.isLocked||!state.draggingLook)return;camera.rotation.y-=e.movementX*.004;camera.rotation.x=clamp(camera.rotation.x-e.movementY*.004,-1.45,1.45)});
+addEventListener('keydown',e=>{if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='Space'&&state.onGround&&!e.repeat){state.velocityY=8;state.onGround=false}if(e.code==='KeyR')reload()});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
+addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===0){focusGame();state.draggingLook=true;if(!controls.isLocked)requestMouseCapture();shoot()}});addEventListener('mouseup',()=>state.draggingLook=false);addEventListener('mousemove',e=>{if(!isPlaying()||controls?.isLocked||!state.draggingLook)return;camera.rotation.y-=e.movementX*.004;camera.rotation.x=clamp(camera.rotation.x-e.movementY*.004,-1.45,1.45)});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 buildChoices();initWorld();showScreen('home');
