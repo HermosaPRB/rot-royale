@@ -113,21 +113,18 @@ function buildWoodenCharacter(detailed){
       sphere(warm,x,-.906,z,r,.035-toe*.002,.080-toe*.008,leg,10);
     }
     const arm=new THREE.Group();arm.name='arm-'+side;arm.position.set(side*.302,1.61,.022);root.add(arm);
-    tube([[0,0,0],[side*.025,-.14,.006],[side*.065,-.28,-.004],[side*.048,-.46,-.075],[side*.027,-.59,-.105]],[.045,.043,.032,.026,.028],warm,arm,18,9);
+    const hand=side===1?[-.152,-.245,-.362]:[.382,-.16,-.662];
+    const elbow=side===1?[.065,-.32,-.16]:[.01,-.33,-.34];
+    tube([[0,0,0],[elbow[0]*.6,-.17,elbow[2]*.55],elbow,[hand[0],hand[1]-.02,hand[2]+.065],hand],[.045,.043,.032,.026,.028],warm,arm,18,9);
     sphere(warm,0,-.005,0,.043,.070,.045,arm);
-    const palm=sphere(warm,side*.025,-.625,-.113,.051,.077,.032,arm);palm.rotation.z=-side*.16;
+    const [hx,hy,hz]=hand;
+    sphere(warm,hx,hy,hz,.051,.060,.045,arm);
+    const grip=new THREE.Object3D();grip.name=side===1?'trigger-hand':'support-hand';grip.position.set(...hand);arm.add(grip);
     for(let finger=0;finger<4;finger++){
-      const x=side*(-.005+finger*.021),length=[.075,.093,.088,.065][finger];
-      tube([[x,-.647,-.12],[x+side*.005,-.675,-.136],[x+side*.002,-.647-length,-.124]],[.013,.012,.008],warm,arm,7,6);
-      sphere(warm,x+side*.002,-.647-length,-.124,.009,.012,.01,arm,8);
+      const y=hy+.035-finger*.024;
+      tube([[hx-.026,y,hz-.027],[hx-.044,y,hz-.057],[hx+.015,y,hz-.061],[hx+.029,y,hz-.032]],[.012,.012,.010,.009],warm,arm,8,6);
     }
-    tube([[side*-.01,-.598,-.137],[side*-.047,-.629,-.163],[side*-.051,-.665,-.162]],[.020,.017,.011],warm,arm,9,7);
-    if(side===-1){
-      // Long diagonal bat: handle rises behind the shoulder, barrel by the foot.
-      const tip=new THREE.Vector3(-.38,-1.50,.02),handle=new THREE.Vector3(.60,.36,.36),direction=new THREE.Vector3().subVectors(handle,tip),length=direction.length();
-      const batProfile=[[0,0],[.047,0],[.086,.025],[.089,.095],[.073,length*.36],[.049,length*.66],[.030,length-.09],[.034,length-.035],[.026,length],[0,length]].map(p=>new THREE.Vector2(...p));
-      const bat=add(new THREE.LatheGeometry(batProfile,16),skin,0,0,0,arm);bat.position.copy(tip);bat.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.normalize());bat.userData.noHit=true;bat.name='wooden-bat';
-    }
+    tube([[hx+.037,hy+.037,hz],[hx+.047,hy+.018,hz-.047],[hx+.020,hy+.009,hz-.059]],[.020,.017,.011],warm,arm,9,7);
   }
   mergeRigidParts(root);
   return root;

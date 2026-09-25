@@ -63,12 +63,12 @@
           <p class="map-location">Italian plaza · Up to 6 players</p>
           <div class="rule-heading">EVERY ROT FOR THEMSELVES</div>
           <p>Most eliminations in 3 minutes wins.</p>
-          <ul><li>Unlimited respawns</li><li>Back in action after 3 seconds</li><li>Coffee splatter. Zero blood.</li></ul>
+          <ul><li>Unlimited respawns</li><li>Back in action after 3 seconds</li><li>F: bat melee · 50 damage</li><li>Coffee splatter. Zero blood.</li></ul>
           <div class="room-tip">Create a room and share its code.<br>The host starts when friends arrive.</div>
         </aside>
         <aside class="rules-strip" aria-label="How to play">
           <strong>CONTROLS</strong>
-          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> aim</span><span><kbd>CLICK</kbd> fire</span><span><kbd>R</kbd> reload</span><span><kbd>SPACE</kbd> jump</span><span><kbd>ESC</kbd> menu</span>
+          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> aim</span><span><kbd>CLICK</kbd> fire</span><span><kbd>F</kbd> bat melee</span><span><kbd>R</kbd> reload</span><span><kbd>SPACE</kbd> jump</span><span><kbd>ESC</kbd> menu</span>
         </aside>
       </div>
     </section>
@@ -89,6 +89,7 @@
       <div class="modal-card small-card">
         <div class="eyebrow">TIMEOUT</div>
         <h2 id="pause-title">Back to the chaos?</h2>
+        <p>Press F for a close-range bat swing. Two hits eliminate; each swing has a short cooldown.</p>
         <button id="resume" class="primary">Resume match</button>
         <button id="leave-match" class="text-button">Leave match</button>
       </div>
@@ -115,7 +116,7 @@
       <div id="control-hint" class="control-hint">WASD TO MOVE · CLICK TO CAPTURE MOUSE</div>
       <div class="hud-bottom">
         <div class="health-wrap"><span id="health-number">100</span><div class="health-track"><div id="health-bar"></div></div><small>ESPRESSO</small></div>
-        <div class="weapon-hud"><small id="weapon-name">AR</small><strong><span id="ammo">30</span><em>/</em><span id="reserve">90</span></strong></div>
+        <div class="weapon-hud"><small id="weapon-name">AR</small><strong><span id="ammo">30</span><em>/</em><span id="reserve">90</span></strong><small id="melee-status">F · BAT MELEE</small></div>
       </div>
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="damage-flash"></div>
@@ -124,6 +125,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=character-9-final"></script>
+  <script type="module" src="./game.js?v=melee-10-final"></script>
 </body>
 </html>
