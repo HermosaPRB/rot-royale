@@ -14,10 +14,10 @@ const CHARACTERS = [
   {id:'gabbiano',name:'Gabbiano Gelato',emoji:'🍦',color:0xe97b9c,shape:'cone'}
 ];
 const WEAPONS = {
-  ar:{name:'Espresso AR',icon:'☕',damage:18,rate:115,mag:30,reserve:90,reload:1450,spread:.009,pellets:1,range:72,color:0xe74831},
+  ar:{name:'Espresso AR',icon:'☕',automatic:true,damage:18,rate:115,mag:30,reserve:90,reload:1450,spread:.009,pellets:1,range:72,color:0xe74831},
   shotgun:{name:'Biscotti Boomstick',icon:'🥨',damage:11,rate:720,mag:6,reserve:30,reload:1900,spread:.075,pellets:8,range:24,color:0xf2b84b},
   sniper:{name:'Lungo Sniper',icon:'🥄',damage:82,rate:1050,mag:5,reserve:20,reload:2100,spread:.001,pellets:1,range:120,color:0x57c5be},
-  smg:{name:'Ristretto SMG',icon:'⚡',damage:11,rate:72,mag:40,reserve:120,reload:1350,spread:.022,pellets:1,range:55,color:0xe97b9c}
+  smg:{name:'Ristretto SMG',icon:'⚡',automatic:true,damage:11,rate:72,mag:40,reserve:120,reload:1350,spread:.022,pellets:1,range:55,color:0xe97b9c}
 };
 
 const state = {
@@ -25,7 +25,7 @@ const state = {
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
   pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,
-  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity
+  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0
 };
 
 let scene,camera,renderer,controls,clock,world,playerMeshes=new Map(),raycaster,weaponModel,meleeModel;
@@ -45,7 +45,7 @@ const AIM_PROFILES={
 let lobbyRenderer,lobbyScene,lobbyCamera,lobbyFighter;
 const lobbyFighters=new Map();
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
-const weaponDescriptions={ar:'Balanced / medium range',shotgun:'Heavy / close range',sniper:'Precision / long range',smg:'Fast / mobile'};
+const weaponDescriptions={ar:'Full auto / medium range',shotgun:'Heavy / close range',sniper:'Precision / long range',smg:'Full auto / mobile'};
 // Shared sensitivity keeps captured and embedded-browser mouse look consistent.
 const LOOK_RADIANS_PER_PIXEL=.00656;
 const EDGE_TURN_RADIANS_PER_SECOND=5.6;
@@ -167,7 +167,7 @@ function syncMeshes(dt=1/60){
   for(const [id,m] of playerMeshes)if(!state.players[id]){world.remove(m);playerMeshes.delete(id)}
 }
 
-function myPublic(){return{id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,equipped:state.equipped,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive}}
+function myPublic(){return{id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,equipped:state.equipped,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive,respawnAt:state.respawnAt}}
 function seedSelf(){state.players[state.id]=myPublic();}
 function broadcast(msg){if(!state.host)return;state.connections.forEach(c=>{if(c.open)c.send(msg)})}
 function sendHost(msg){if(state.host)handleHostMessage(msg,state.id);else if(state.conn?.open)state.conn.send(msg)}
@@ -212,7 +212,13 @@ function handleClientMessage(d){
   if(d.t==='lobby'){state.matchActive=false;state.players=d.players;enterLobby()}
   if(d.t==='reject')leaveToHome(d.reason)
 }
-function syncLocalFromSnapshot(){const me=state.players[state.id];if(!me)return;state.kills=me.kills||0;state.deaths=me.deaths||0;state.health=me.health??state.health;updateHud()}
+function syncLocalFromSnapshot(){
+  const me=state.players[state.id];if(!me)return;state.kills=me.kills||0;state.deaths=me.deaths||0;
+  if(state.matchActive&&me.alive===false&&state.alive)takeDamageResult({killed:true,respawnAt:me.respawnAt});
+  else if(state.matchActive&&me.alive===true&&!state.alive)doRespawn(me.x,me.z);
+  else state.health=me.health??state.health;
+  updateHud();
+}
 function peerError(err){const msg=err.type==='peer-unavailable'?'Room not found. Check the code and try again.':'Connection trouble. Try creating or joining the room again.';leaveToHome(msg)}
 function resetPeer(){if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
 function setError(s){$('connection-error').textContent=s}
@@ -226,7 +232,7 @@ function startMatch(){
   if(!state.host)return;state.matchEnd=Date.now()+180000;Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,...spawnFor(i)}));broadcast({t:'start',end:state.matchEnd,players:state.players});beginMatch(true)
 }
 function beginMatch(asHost){
-  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped='gun';state.headshotAt=-Infinity;resetAim();
+  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped='gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
   state.matchActive=true;state.mode='game';state.health=100;state.kills=0;state.deaths=0;state.alive=true;const w=WEAPONS[state.selectedWeapon];state.ammo=w.mag;state.reserve=Infinity;state.reloading=false;
   const me=state.players[state.id];if(me){camera.position.set(me.x||0,1.7,me.z||12)}else camera.position.set(0,1.7,12);
   state.keys={};state.velocityY=0;state.onGround=true;camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
@@ -237,25 +243,48 @@ function applyHit(shooterId,targetId,damage,headshot=false){
   const target=state.players[targetId],shooter=state.players[shooterId];if(!target||!shooter||!target.alive)return;target.health=Math.max(0,target.health-Math.min(100,Math.max(1,damage||1)));
   const killed=target.health<=0;
   if(killed){
-    target.alive=false;target.deaths=(target.deaths||0)+1;shooter.kills=(shooter.kills||0)+1;
+    target.alive=false;target.respawnAt=Date.now()+3000;target.deaths=(target.deaths||0)+1;shooter.kills=(shooter.kills||0)+1;
     if(shooterId===state.id)state.kills=shooter.kills;if(targetId===state.id)state.deaths=target.deaths;
     const text=headshot?`${shooter.name} headshot ${target.name} ☕`:`${shooter.name} spilled ${target.name}'s coffee`;
-    broadcast({t:'event',text,victim:targetId,killer:shooterId,killed:true,headshot});addFeed(text);if(targetId===state.id)takeDamageResult({killed:true});
-    setTimeout(()=>{if(state.matchActive&&state.players[targetId]===target){Object.assign(target,{health:100,alive:true,...spawnFor(Math.floor(Math.random()*6))});if(targetId===state.id)doRespawn(target.x,target.z);else state.connections.get(targetId)?.send({t:'respawn',id:targetId,x:target.x,z:target.z});hostSnapshot()}},3000);
+    broadcast({t:'event',text,victim:targetId,killer:shooterId,killed:true,headshot,respawnAt:target.respawnAt});addFeed(text);if(targetId===state.id)takeDamageResult({killed:true,respawnAt:target.respawnAt});
+    // Snapshots replace player objects. Resolve by stable ID, round and death number instead.
+    const roundEnd=state.matchEnd,deathNumber=target.deaths;
+    setTimeout(()=>{
+      const current=state.players[targetId];
+      if(!state.host||!state.matchActive||state.matchEnd!==roundEnd||!current||current.alive!==false||current.deaths!==deathNumber)return;
+      Object.assign(current,{health:100,alive:true,respawnAt:0,y:1.7,...spawnFor(Math.floor(Math.random()*6))});
+      if(targetId===state.id)doRespawn(current.x,current.z);else state.connections.get(targetId)?.send({t:'respawn',id:targetId,x:current.x,z:current.z});hostSnapshot();
+    },3000);
   }else{
     state.connections.get(targetId)?.send({t:'event',text:'',victim:targetId,killer:shooterId,damage:true,health:target.health});
     if(targetId===state.id){state.health=target.health;flashDamage()}
   }
   hostSnapshot();
 }
-function takeDamageResult(d){const me=state.players[state.id];if(me)state.health=me.health;if(d.killed){state.alive=false;$('respawn').classList.add('active');let n=3;$('respawn-time').textContent=n;const t=setInterval(()=>{$('respawn-time').textContent=--n;if(n<=0)clearInterval(t)},1000);controls.unlock()}else flashDamage();updateHud()}
-function doRespawn(x,z){state.alive=true;state.health=100;camera.position.set(x??0,1.7,z??12);state.velocityY=0;state.onGround=true;state.keys={};$('respawn').classList.remove('active');if(isPlaying()){focusGame();requestMouseCapture()}updateHud()}
+function takeDamageResult(d){
+  if(!state.matchActive)return;const me=state.players[state.id];
+  if(d.killed){
+    if(!state.alive)return;state.alive=false;state.health=0;state.respawnAt=Number.isFinite(d.respawnAt)&&d.respawnAt>0?d.respawnAt:Date.now()+3000;state.reloading=false;clearInput();
+    if(me)Object.assign(me,{health:0,alive:false,respawnAt:state.respawnAt});
+    $('respawn').classList.add('active');updateRespawnCountdown();controls.unlock();updateCursor();
+  }else{state.health=d.health??me?.health??state.health;if(me)me.health=state.health;flashDamage()}
+  updateHud();
+}
+function updateRespawnCountdown(){if(state.matchActive&&!state.alive)$('respawn-time').textContent=Math.max(0,Math.ceil((state.respawnAt-Date.now())/1000))}
+function doRespawn(x,z){
+  if(!state.matchActive)return;state.alive=true;state.health=100;state.respawnAt=0;state.reloading=false;state.ammo=WEAPONS[state.selectedWeapon].mag;
+  camera.position.set(x??0,1.7,z??12);state.velocityY=0;state.onGround=true;clearInput();
+  // Update both stores before HUD/snapshot reads can put the old zero health back.
+  const me=state.players[state.id];if(me)Object.assign(me,{health:100,alive:true,respawnAt:0,x:camera.position.x,y:1.7,z:camera.position.z});
+  $('respawn').classList.remove('active');updateWeaponModel();updateHud();updateCursor();if(isPlaying()){focusGame();requestMouseCapture()}
+}
 function flashDamage(){$('damage-flash').classList.add('show');setTimeout(()=>$('damage-flash').classList.remove('show'),190)}
 
 function shoot(){
   if(!isPlaying()||state.equipped==='bat'||state.reloading||performance.now()-state.meleeStart<MELEE.duration)return;const w=WEAPONS[state.selectedWeapon],now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponMotion.kick=Math.min(1.4,weaponMotion.kick+({ar:.65,shotgun:1.3,sniper:1.1,smg:.45}[state.selectedWeapon]));
   publishCombatPose();sendHost({t:'shot'});
 }
+function updateAutomaticFire(){if(state.fireHeld&&WEAPONS[state.selectedWeapon].automatic)shoot()}
 function publishCombatPose(){if(state.host)state.players[state.id]=myPublic();else sendHost({t:'state',x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:camera.rotation.y,pitch:camera.rotation.x,equipped:state.equipped})}
 // The host raycasts the actual character geometry, including its own player, and decides damage.
 function resolveShot(id,now=performance.now()){
@@ -330,7 +359,7 @@ function updateCombatVisuals(now){
 }
 function toggleBat(){
   if(!isPlaying()||performance.now()-state.meleeStart<MELEE.duration)return;
-  state.equipped=state.equipped==='bat'?'gun':'bat';state.reloading=false;resetAim();weaponMotion.kick=0;publishCombatPose();updateWeaponModel();updateCombatVisuals(performance.now());updateHud();
+  state.equipped=state.equipped==='bat'?'gun':'bat';state.fireHeld=false;state.reloading=false;resetAim();weaponMotion.kick=0;publishCombatPose();updateWeaponModel();updateCombatVisuals(performance.now());updateHud();
 }
 function reload(){const w=WEAPONS[state.selectedWeapon];if(!isPlaying()||state.equipped==='bat'||performance.now()-state.meleeStart<MELEE.duration||state.reloading||state.ammo>=w.mag)return;state.reloading=true;state.reloadStart=performance.now();$('weapon-name').textContent='RELOADING…'}
 function smoothStep(t){t=THREE.MathUtils.clamp(t,0,1);return t*t*(3-2*t)}
@@ -402,13 +431,13 @@ function returnLobby(){if(state.practice){leaveToHome();return}Object.values(sta
 function updateHud(){const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top}
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]];const p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMouseEdgeTurn(dt);updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateCombatVisuals(now);updateImpacts(now);renderer.render(scene,camera)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMouseEdgeTurn(dt);updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();renderer.render(scene,camera)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){state.keys={};state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
+function clearInput(){state.keys={};state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE JUMP · ESC MENU';$('control-hint').classList.remove('hidden')}
@@ -439,7 +468,7 @@ function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput(
 
 addEventListener('keydown',e=>{if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
-addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else shoot()}});addEventListener('mouseup',e=>{if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked)state.aiming=false});
+addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0)state.fireHeld=false;if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 buildChoices();initWorld();showScreen('home');
