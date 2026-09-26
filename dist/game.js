@@ -511,19 +511,29 @@ function updateMovement(dt){
   const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(),wish=forward.multiplyScalar(forwardInput).addScaledVector(right,sideInput),moving=wish.lengthSq()>0;wish.normalize();
   const previousSpeed=Math.hypot(state.velocityX,state.velocityZ);
   if(state.onGround){
-    const jumping=!!state.keys.Space,speed=moving&&jumping?Math.min(13.5,Math.max(8.5,previousSpeed)+(state.hopChain>0?1.1:0)):8.5;
+    const jumping=!!state.keys.Space,speed=moving&&jumping?Math.max(11,previousSpeed)+(state.hopChain>0?2.6:0):8.5;
     state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed;
     if(jumping){state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
-    const speed=Math.min(13.5,Math.max(8.5,previousSpeed)),steer=1-Math.exp(-3*dt);
+    const speed=Math.max(8.5,previousSpeed),steer=1-Math.exp(-4.5*dt);
     state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);
     const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.001){state.velocityX*=speed/length;state.velocityZ*=speed/length}
   }else{state.velocityX*=Math.exp(-.6*dt);state.velocityZ*=Math.exp(-.6*dt)}
-  const rawX=camera.position.x+state.velocityX*dt,nextX=clamp(rawX,-34,34);
-  if(!collides(nextX,camera.position.z))camera.position.x=nextX;else{state.velocityX=0;state.hopChain=0}if(rawX!==nextX){state.velocityX=0;state.hopChain=0}
-  const rawZ=camera.position.z+state.velocityZ*dt,nextZ=clamp(rawZ,-35,35);
-  if(!collides(camera.position.x,nextZ))camera.position.z=nextZ;else{state.velocityZ=0;state.hopChain=0}if(rawZ!==nextZ){state.velocityZ=0;state.hopChain=0}
+  moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
   state.velocityY-=22*dt;camera.position.y+=state.velocityY*dt;if(camera.position.y<=1.7){camera.position.y=1.7;state.velocityY=0;state.onGround=true}
+}
+function moveSweptAxis(axis,delta){
+  // Check the entire path, not just the endpoint: uncapped speed cannot skip thin cover.
+  // One pass over the fixed collider list, regardless of speed (no unbounded substeps).
+  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=axis==='x'?34:35;
+  const requested=old+delta;let next=clamp(requested,-bound,bound);
+  for(const c of colliders){
+    if(side<=c['min'+cross]-.55||side>=c['max'+cross]+.55)continue;
+    const near=c['min'+suffix]-.55,far=c['max'+suffix]+.55;
+    if(delta>0&&old<=near&&next>near)next=Math.min(next,near-.00001);
+    else if(delta<0&&old>=far&&next<far)next=Math.max(next,far+.00001);
+  }
+  camera.position[axis]=next;if(next!==requested){state[axis==='x'?'velocityX':'velocityZ']=0;state.hopChain=0}
 }
 function collides(x,z){return colliders.some(c=>x>c.minX-.55&&x<c.maxX+.55&&z>c.minZ-.55&&z<c.maxZ+.55)}
 function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
