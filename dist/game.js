@@ -25,7 +25,7 @@ const state = {
   mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,map:'neon',arsenal:{},pickups:[],lootNoticeUntil:0,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
-  pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,
+  pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,emoteUntil:0,emoteYaw:0,emoteEquipment:'gun',
   meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0
 };
 
@@ -39,6 +39,11 @@ const tracerSlots=Array.from({length:96},()=>({start:new THREE.Vector3(),end:new
 let tracerMesh,tracerCursor=0;
 const tracerTransform=new THREE.Object3D(),tracerDirection=new THREE.Vector3(),tracerUp=new THREE.Vector3(0,1,0);
 const weaponRigs=new Map();
+const EMOTE_DURATION=4000;let emoteCamera,emoteActor,emoteCharacter;
+const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();let buildSerial=0,buildGhost;
+const BUILD_LIMIT=6,BUILD_LIFETIME=45000;
+state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
+const ghostMaterial=new THREE.MeshBasicMaterial({color:0x55efb4,transparent:true,opacity:.35,depthWrite:false});
 const weaponMotion={kick:0,walk:0,phase:0,yaw:null,pitch:null,swayX:0,swayY:0};
 const AIM_PROFILES={
   ar:{fov:58,raise:.20,lower:.14,kick:.052,settle:17,label:'IRON SIGHTS'},
@@ -66,6 +71,7 @@ function weaponStats(type,arsenal=state.arsenal){const tier=weaponTier(type,arse
 function setMap(id){
   if(!Object.hasOwn(MAPS,id))id='neon';state.map=id;$('map-select').value=id;$('map-title').textContent=MAPS[id].name;$('map-description').textContent=MAPS[id].description;
   if(!world||builtMap===id)return;
+  syncBuilds([]);if(buildGhost)world.remove(buildGhost);buildGhost=null;state.buildMode=false;
   for(const burst of coffeeBursts)burst.mesh.dispose();if(tracerMesh){tracerMesh.dispose();tracerMesh.geometry.dispose();tracerMesh.material.dispose()}
   world.clear();playerMeshes.clear();hitModels.clear();pickupMeshes.clear();coffeeBursts.length=0;tracerMesh=null;tracerSlots.forEach(s=>s.born=-Infinity);colliders.length=shotBlockers.length=ladders.length=0;state.climbing=null;
   if(mapCache.has(id)){const saved=mapCache.get(id);world.add(...saved.children);colliders.push(...saved.colliders);shotBlockers.push(...saved.blockers);ladders.push(...saved.ladders)}else{if(id==='neon')buildNeonTown({world,colliders,shotBlockers,mat,ladders});else makePlaza();mapCache.set(id,{children:[...world.children],colliders:[...colliders],blockers:[...shotBlockers],ladders:[...ladders]})}
@@ -76,6 +82,7 @@ function setMap(id){
 function resetPickups(){state.pickups=MAPS[state.map].pickups.map(([kind,x,z],id)=>({id,kind,x,z,readyAt:Date.now()+(kind==='case'?20000:0)}))}
 function applyLootAward(d){
   if(!state.matchActive||!Object.hasOwn(WEAPONS,d.weapon))return;
+  stopEmote();
   state.arsenal={...d.arsenal};state.selectedWeapon=d.weapon;state.pendingWeapon=d.weapon;state.equipped='gun';state.reloading=false;state.fireHeld=false;resetAim();state.ammo=WEAPONS[d.weapon].mag;
   const me=state.players[state.id];if(me)Object.assign(me,{weapon:d.weapon,nextWeapon:d.weapon,arsenal:{...state.arsenal},equipped:'gun'});
   updateWeaponModel();updateHud();const w=weaponStats(d.weapon),r=RARITIES[w.tier];
@@ -186,6 +193,9 @@ function createPlayerMesh(p,register=true,collisionOnly=false){
   const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
   if(c.shape==='wooden'){
     const avatar=createWoodenCharacter(register||collisionOnly?'game':'preview');g.add(avatar);g.userData.avatar=avatar;
+    const torso=new THREE.Group();torso.position.y=.75;torso.name='dance-torso';
+    for(const part of [...avatar.children])if(!avatar.userData.legs.includes(part)){part.position.y-=.75;torso.add(part)}
+    avatar.add(torso);avatar.userData.danceTorso=torso;
   }else{
   const body=new THREE.Mesh(new THREE.CapsuleGeometry(.52,.9,5,9),mat(c.color));body.position.y=1.05;body.castShadow=true;body.userData.playerId=p.id;g.add(body);
   const head=new THREE.Mesh(new THREE.SphereGeometry(.52,14,10),mat(c.color));head.position.y=2.05;head.castShadow=true;head.userData.playerId=p.id;g.add(head);
@@ -218,15 +228,16 @@ function syncMeshes(dt=1/60){
     if(avatar){avatar.position.y=lift;avatar.userData.legs.forEach((leg,i)=>leg.rotation.x=Math.sin(u.stride+i*Math.PI)*.46*u.walk);
       avatar.userData.arms.forEach((arm,i)=>{const arc=Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI);arm.rotation.x=swing?(i===1?-1.1+arc*1.9:.4):holding?(i===1?-.5:.3):0;arm.rotation.z=swing&&i===1?-.5*arc:0});
     }
+    poseEmote(m,p);
   });
   for(const [id,m] of playerMeshes)if(!state.players[id]){world.remove(m);playerMeshes.delete(id)}
 }
 
-function myPublic(){return{id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,nextWeapon:state.pendingWeapon,arsenal:{...state.arsenal},equipped:state.equipped,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive,respawnAt:state.respawnAt}}
+function myPublic(){return{id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,nextWeapon:state.pendingWeapon,arsenal:{...state.arsenal},equipped:state.equipped,emoteUntil:state.emoteUntil,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:state.emoteUntil>Date.now()?state.emoteYaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive,respawnAt:state.respawnAt}}
 function seedSelf(){state.players[state.id]=myPublic();}
 function broadcast(msg){if(!state.host)return;state.connections.forEach(c=>{if(c.open)c.send(msg)})}
 function sendHost(msg){if(state.host)handleHostMessage(msg,state.id);else if(state.conn?.open)state.conn.send(msg)}
-function hostSnapshot(){state.players[state.id]=myPublic();broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive,map:state.map,pickups:state.pickups})}
+function hostSnapshot(){state.players[state.id]=myPublic();broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive,map:state.map,pickups:state.pickups,builds:state.builds})}
 
 function createRoom(){
   state.host=true;state.practice=false;state.room=roomCode();state.id='host';resetPeer();setError('');
@@ -247,6 +258,8 @@ function acceptConnection(c){
 function wireClient(c){c.on('open',()=>setError(''));c.on('data',d=>handleClientMessage(d));c.on('close',()=>leaveToHome('The host closed the room.'));c.on('error',peerError)}
 function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
+  if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
+  if(d.t==='build')placeBuild(from,d);
   if(d.t==='state'&&state.players[from]){const p=state.players[from];p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,14);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun'}
   if(d.t==='shot')resolveShot(from);
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
@@ -255,8 +268,11 @@ function handleHostMessage(d,from){
 }
 function handleClientMessage(d){
   if(!d)return;
+  if(d.t==='emote'){if(state.players[d.id])state.players[d.id].emoteUntil=d.until;if(d.id===state.id&&state.emoteUntil)state.emoteUntil=d.until}
+  if(d.t==='builds')syncBuilds(d.builds||[]);
+  if(d.t==='buildError')toast(d.message);
   if(d.t==='welcome'){state.players=d.players;if(d.map)setMap(d.map);enterLobby()}
-  if(d.t==='snapshot'){state.players=d.players||{};state.matchEnd=d.end||0;if(d.map)setMap(d.map);if(d.pickups)state.pickups=d.pickups;if(d.active&&!state.matchActive)beginMatch(false);syncLocalFromSnapshot()}
+  if(d.t==='snapshot'){state.players=d.players||{};state.matchEnd=d.end||0;if(d.map)setMap(d.map);if(d.pickups)state.pickups=d.pickups;if(d.active&&!state.matchActive)beginMatch(false);if(d.builds)syncBuilds(d.builds);syncLocalFromSnapshot()}
   if(d.t==='start'){state.matchEnd=d.end;state.players=d.players;if(d.map)setMap(d.map);state.pickups=d.pickups||[];beginMatch(false)}
   if(d.t==='pickups')state.pickups=d.pickups||[];
   if(d.t==='loot')applyLootAward(d);
@@ -293,6 +309,8 @@ function startMatch(){
   if(!state.host)return;state.matchEnd=Date.now()+180000;state.arsenal={};Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...spawnFor(i)}));resetPickups();broadcast({t:'start',end:state.matchEnd,players:state.players,map:state.map,pickups:state.pickups});beginMatch(true)
 }
 function beginMatch(asHost){
+  stopEmote(false);
+  syncBuilds([]);state.buildMode=false;buildCooldowns.clear();
   state.climbing=null;
   state.arsenal={...state.players[state.id]?.arsenal};if(Object.hasOwn(WEAPONS,state.players[state.id]?.weapon))state.selectedWeapon=state.players[state.id].weapon;state.lootNoticeUntil=0;
   state.velocityX=state.velocityZ=state.hopChain=0;state.pendingWeapon=state.selectedWeapon;
@@ -356,26 +374,28 @@ function doRespawn(x,z,weapon=state.players[state.id]?.weapon){
 function flashDamage(){$('damage-flash').classList.add('show');setTimeout(()=>$('damage-flash').classList.remove('show'),190)}
 
 function shoot(){
+  stopEmote();
+  if(state.buildMode)return;
   if(!isPlaying()||state.equipped==='bat'||state.reloading||performance.now()-state.meleeStart<MELEE.duration)return;const w=weaponStats(state.selectedWeapon),now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponMotion.kick=Math.min(1.4,weaponMotion.kick+({ar:.65,shotgun:1.3,sniper:1.1,smg:.45}[state.selectedWeapon]));
   publishCombatPose();sendHost({t:'shot'});
 }
 function updateAutomaticFire(){if(state.fireHeld&&WEAPONS[state.selectedWeapon].automatic)shoot()}
-function publishCombatPose(){if(state.host)state.players[state.id]=myPublic();else sendHost({t:'state',x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:camera.rotation.y,pitch:camera.rotation.x,equipped:state.equipped})}
+function publishCombatPose(){const p=myPublic();if(state.host)state.players[state.id]=p;else sendHost({t:'state',x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,equipped:p.equipped})}
 // The host raycasts the actual character geometry, including its own player, and decides damage.
 function resolveShot(id,now=performance.now()){
   const attacker=state.players[id],w=Object.hasOwn(WEAPONS,attacker?.weapon)?weaponStats(attacker.weapon,attacker.arsenal||{}):null;
   if(!state.host||!state.matchActive||!attacker||attacker.alive===false||attacker.equipped==='bat'||!w||now-(shotCooldowns.get(id)??-Infinity)<w.rate)return;
-  shotCooldowns.set(id,now);const targets=[...shotBlockers],hits=new Map();world.updateMatrixWorld(true);
+  shotCooldowns.set(id,now);const targets=[...shotBlockers],hits=new Map(),structureHits=new Map();world.updateMatrixWorld(true);
   for(const p of Object.values(state.players)){
     if(p.id===id||p.alive===false)continue;
     let model=hitModels.get(p.id);if(!model){model=createPlayerMesh(p,false,true);model.userData.hitMeshes=[];model.traverse(m=>{if(m.isMesh&&!m.userData.noHit)model.userData.hitMeshes.push(m)});hitModels.set(p.id,model)}
-    model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,(p.yaw||0)+(p.bot?Math.PI:0),0);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
+    model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,(p.yaw||0)+(p.bot?Math.PI:0),0);poseEmote(model,p);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
   }
   const origin=new THREE.Vector3(attacker.x,attacker.y??1.7,attacker.z),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(attacker.pitch||0,attacker.yaw||0,0,'YXZ')),ends=[];
   for(let n=0;n<w.pellets;n++){
     const dir=new THREE.Vector3((Math.random()-.5)*w.spread,(Math.random()-.5)*w.spread,-1).normalize().applyQuaternion(rotation);raycaster.set(origin,dir);raycaster.far=w.range;
-    const first=raycaster.intersectObjects(targets,false)[0],targetId=first?.object.userData.playerId;ends.push((first?first.point:origin.clone().addScaledVector(dir,w.range)).toArray());if(!targetId)continue;
-    const local=hitModels.get(targetId).worldToLocal(first.point.clone()),headshot=local.y>=1.80,hit=hits.get(targetId)||{damage:0,headshot:false,point:first.point};
+    const first=raycaster.intersectObjects(targets,false)[0],targetId=first?.object.userData.playerId;ends.push((first?first.point:origin.clone().addScaledVector(dir,w.range)).toArray());const buildId=first?.object.userData.buildId;if(buildId)structureHits.set(buildId,(structureHits.get(buildId)||0)+w.damage);if(!targetId)continue;
+    const targetModel=hitModels.get(targetId),torso=targetModel.userData.avatar?.userData.danceTorso,local=(torso||targetModel).worldToLocal(first.point.clone()),headshot=local.y+(torso?.75:0)>=1.80,hit=hits.get(targetId)||{damage:0,headshot:false,point:first.point};
     hit.damage+=w.damage*(headshot?2:1);hit.headshot||=headshot;if(headshot)hit.point=first.point;hits.set(targetId,hit);
   }
   const trail={t:'tracers',id,weapon:attacker.weapon,origin:origin.clone().add(new THREE.Vector3(.24,-.18,-.65).applyQuaternion(rotation)).toArray(),ends};showTracers(trail);broadcast(trail);
@@ -383,7 +403,8 @@ function resolveShot(id,now=performance.now()){
   for(const [target,hit] of hits){
     anyHeadshot||=hit.headshot;const impact={t:'impact',id:target,headshot:hit.headshot,x:hit.point.x,y:hit.point.y,z:hit.point.z};showImpact(impact);broadcast(impact);applyHit(id,target,hit.damage,hit.headshot);
   }
-  if(hits.size){if(id===state.id)showShotFeedback(anyHeadshot);else state.connections.get(id)?.send({t:'shotResult',id,headshot:anyHeadshot})}
+  for(const [buildId,damage] of structureHits)damageBuild(buildId,damage);
+  if(hits.size||structureHits.size){if(id===state.id)showShotFeedback(anyHeadshot);else state.connections.get(id)?.send({t:'shotResult',id,headshot:anyHeadshot})}
 }
 function showTracers(message){
   const valid=p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite);
@@ -418,6 +439,7 @@ function updateImpacts(now){
 }
 function showHitmarker(){$('hitmarker').classList.add('show');setTimeout(()=>$('hitmarker').classList.remove('show'),140)}
 function meleeAttack(){
+  stopEmote();
   const now=performance.now();if(!isPlaying()||state.equipped!=='bat'||state.reloading||now-state.lastMelee<MELEE.cooldown)return;
   state.lastMelee=state.meleeStart=now;$('weapon-name').textContent='BAT SWING';
   publishCombatPose();
@@ -439,7 +461,7 @@ function chooseMeleeTarget(attacker){
 function resolveMelee(id,now=performance.now()){
   const attacker=state.players[id];if(!state.host||!state.matchActive||!attacker||attacker.alive===false||attacker.equipped!=='bat'||now-(meleeCooldowns.get(id)??-Infinity)<MELEE.cooldown)return;
   meleeCooldowns.set(id,now);meleeVisuals.set(id,now);broadcast({t:'meleeSwing',id});
-  const target=chooseMeleeTarget(attacker);if(!target)return;
+  const target=chooseMeleeTarget(attacker);if(!target){const origin=new THREE.Vector3(attacker.x,attacker.y??1.7,attacker.z),dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(attacker.pitch||0,attacker.yaw||0,0,'YXZ'));raycaster.set(origin,dir);raycaster.far=MELEE.range;const hit=raycaster.intersectObjects(shotBlockers,false)[0];if(hit?.object.userData.buildId){damageBuild(hit.object.userData.buildId,MELEE.damage);if(id===state.id)showHitmarker();else state.connections.get(id)?.send({t:'meleeHit',id})}return}
   applyHit(id,target.id,MELEE.damage);if(id===state.id)showHitmarker();else state.connections.get(id)?.send({t:'meleeHit',id});
 }
 function updateCombatVisuals(now){
@@ -509,6 +531,7 @@ function updateWeaponMotion(dt,now){
 
 function updateMovement(dt){
   if(!isPlaying())return;
+  if(state.emoteUntil){if(Date.now()>=state.emoteUntil||['KeyW','KeyA','KeyS','KeyD','Space'].some(k=>state.keys[k]))stopEmote();else{updateVerticalMovement(dt);return}}
   updateLadderHint();if(state.climbing!==null){updateClimbing(dt);return}
   const forwardInput=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),sideInput=(state.keys.KeyD?1:0)-(state.keys.KeyA?1:0),forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();
   const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(),wish=forward.multiplyScalar(forwardInput).addScaledVector(right,sideInput),moving=wish.lengthSq()>0;wish.normalize();
@@ -560,6 +583,88 @@ function toggleLadder(){
   if(!isPlaying())return;if(state.climbing!==null){state.climbing=null;state.onGround=false;return}
   const index=nearbyLadder();if(index<0)return;const l=ladders[index];state.climbing=index;state.velocityX=state.velocityY=state.velocityZ=state.hopChain=0;state.onGround=false;camera.position.x=l.x;camera.position.z=l.z;
 }
+function interactOrEmote(){
+  state.buildMode=false;
+  if(state.climbing!==null||nearbyLadder()>=0){stopEmote();toggleLadder();return}
+  if(state.emoteUntil){stopEmote();return}
+  if(!isPlaying()||!state.onGround)return;
+  state.emoteEquipment=state.equipped;state.emoteYaw=camera.rotation.y;state.emoteUntil=Date.now()+EMOTE_DURATION;state.equipped='bat';state.fireHeld=false;state.reloading=false;state.velocityX=state.velocityZ=state.hopChain=0;state.keys={};resetAim();publishCombatPose();sendHost({t:'emote',active:true});updateWeaponModel();
+}
+function stopEmote(notify=true){
+  if(!state.emoteUntil)return;state.emoteUntil=0;state.equipped=state.emoteEquipment||'gun';if(emoteActor)emoteActor.visible=false;
+  $('emote-hint').textContent='';if(weaponModel)updateWeaponModel();if(notify&&state.matchActive){sendHost({t:'emote',active:false});publishCombatPose()}
+}
+function poseEmote(model,p,now=Date.now()){
+  const u=model.userData,avatar=u.avatar,torso=avatar?.userData.danceTorso,active=p.alive!==false&&p.emoteUntil>now;
+  if(!active){if(u.dancing){if(torso){torso.position.set(0,.75,0);torso.rotation.set(0,0,0);avatar.userData.legs.forEach(l=>l.rotation.set(0,0,0));avatar.userData.arms.forEach(a=>a.rotation.set(0,0,0))}else model.rotation.x=model.rotation.z=0;u.dancing=false}return}
+  const t=(now-(p.emoteUntil-EMOTE_DURATION))/1000,blend=smoothStep(t/.25)*smoothStep((p.emoteUntil-now)/250),beat=Math.sin(t*15),sway=Math.sin(t*7.5);
+  u.dancing=true;u.gun.visible=false;u.bat.visible=true;
+  if(torso){
+    avatar.position.y=0;torso.position.set(sway*.09*blend,.75+(.07*beat-.08)*blend,.14*blend);torso.rotation.set((-.72+beat*.10)*blend,sway*.14*blend,sway*.08*blend);
+    avatar.userData.legs.forEach((leg,i)=>{leg.rotation.x=(.18+Math.sin(t*15+i*Math.PI)*.13)*blend;leg.rotation.z=(i?-.14:.14)*blend});
+    avatar.userData.arms.forEach((arm,i)=>{arm.rotation.x=(i?-.3+beat*.25:.45+sway*.2)*blend;arm.rotation.z=(i?-.3:.3)*blend});
+  }else{model.rotation.x=(-.40+beat*.09)*blend;model.rotation.z=sway*.14*blend}
+}
+function gameplayCamera(){
+  if(!isPlaying()||!state.emoteUntil){if(emoteActor)emoteActor.visible=false;return camera}
+  if(Date.now()>=state.emoteUntil){stopEmote();return camera}
+  if(!emoteActor||emoteCharacter!==state.selectedChar){if(emoteActor)world.remove(emoteActor);emoteActor=createPlayerMesh(myPublic(),false,true);emoteCharacter=state.selectedChar}
+  if(emoteActor.parent!==world)world.add(emoteActor);emoteActor.visible=true;emoteActor.position.copy(camera.position);emoteActor.position.y-=1.7;emoteActor.rotation.set(0,state.emoteYaw,0);poseEmote(emoteActor,myPublic());
+  emoteCamera??=new THREE.PerspectiveCamera(65,camera.aspect,.08,160);emoteCamera.aspect=camera.aspect;emoteCamera.updateProjectionMatrix();
+  const target=camera.position.clone().add(new THREE.Vector3(0,-.45,0)),offset=new THREE.Vector3(2.5,1.1,3.5).applyAxisAngle(new THREE.Vector3(0,1,0),camera.rotation.y),length=offset.length();
+  world.updateMatrixWorld(true);raycaster.set(target,offset.normalize());raycaster.far=length;const wall=raycaster.intersectObjects(shotBlockers,false)[0];emoteCamera.position.copy(target).addScaledVector(offset,wall?Math.max(.25,wall.distance-.18):length);emoteCamera.lookAt(target);
+  weaponModel.visible=meleeModel.visible=false;$('crosshair').style.opacity='0';$('emote-hint').textContent='BAT SHAKE · E, MOVE OR ATTACK TO CANCEL';return emoteCamera;
+}
+function buildBoxes(piece){
+  const local=piece.type==='wall'?[{x:0,y:1.4,z:0,w:4,h:2.8,d:.30}]:Array.from({length:12},(_,i)=>({x:0,y:(i+1)*.10,z:2.4-(i+.5)*.4,w:3,h:(i+1)*.2,d:.4,stair:true}));
+  const angle=piece.rotation*Math.PI/2,s=Math.round(Math.sin(angle)),c=Math.round(Math.cos(angle));
+  return local.map(b=>{const x=piece.x+b.x*c+b.z*s,z=piece.z-b.x*s+b.z*c,w=Math.abs(c)?b.w:b.d,d=Math.abs(c)?b.d:b.w;return{minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,minY:piece.y+b.y-b.h/2,maxY:piece.y+b.y+b.h/2,stair:!!b.stair,buildId:piece.id}});
+}
+function buildMesh(type){
+  if(!buildTemplates.has(type)){const root=new THREE.Group(),panel=new THREE.MeshStandardMaterial({color:0x5a9ea8,roughness:.7,metalness:.2}),trim=new THREE.MeshStandardMaterial({color:0x253e54,roughness:.5});
+    const add=(x,y,z,w,h,d,m)=>{const part=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);part.position.set(x,y,z);part.castShadow=part.receiveShadow=true;root.add(part)};
+    const boxes=buildBoxes({type,x:0,y:0,z:0,rotation:0});for(const b of boxes)add((b.minX+b.maxX)/2,(b.minY+b.maxY)/2,(b.minZ+b.maxZ)/2,b.maxX-b.minX,b.maxY-b.minY,b.maxZ-b.minZ,panel);
+    if(type==='wall'){for(const x of [-1.9,0,1.9])add(x,1.4,0,.12,2.85,.36,trim);for(const y of [.08,1.4,2.72])add(0,y,0,4,.12,.36,trim)}else for(let i=0;i<12;i++)add(0,(i+1)*.2+.01,2.4-i*.4,3,.03,.06,trim);
+    mergeRigidParts(root);buildTemplates.set(type,root)}return buildTemplates.get(type).clone(true);
+}
+function syncBuilds(records){
+  state.builds=records;const keep=new Set(records.map(p=>p.id));
+  for(const [id,o] of buildObjects)if(!keep.has(id)){world.remove(o.root);for(let i=colliders.length-1;i>=0;i--)if(colliders[i].buildId===id)colliders.splice(i,1);for(let i=shotBlockers.length-1;i>=0;i--)if(shotBlockers[i].userData.buildId===id)shotBlockers.splice(i,1);buildObjects.delete(id)}
+  for(const p of records)if(!buildObjects.has(p.id)){const root=buildMesh(p.type);root.position.set(p.x,p.y,p.z);root.rotation.y=p.rotation*Math.PI/2;root.traverse(m=>{if(m.isMesh){m.userData.buildId=p.id;shotBlockers.push(m)}});colliders.push(...buildBoxes(p));world.add(root);buildObjects.set(p.id,{root})}
+}
+function candidateBuild(player,type,x,z,rotation){
+  if(!['wall','ramp'].includes(type)||![x,z,rotation].every(Number.isFinite)||!Number.isInteger(rotation)||rotation<0||rotation>3)return null;
+  x=Math.round(x);z=Math.round(z);if(Math.hypot(x-player.x,z-player.z)>6)return null;let y=0;
+  for(const c of colliders)if(Number.isFinite(c.maxY)&&c.maxY<=(player.y??1.7)-1.7+.35&&x>=c.minX&&x<=c.maxX&&z>=c.minZ&&z<=c.maxZ)y=Math.max(y,c.maxY);
+  if(Math.hypot(x-player.x,z-player.z,y-((player.y??1.7)-1.7))>6)return null;return{type,x,z,y,rotation};
+}
+function buildError(p,player){
+  if(!p)return'Too far away';const boxes=buildBoxes(p),bounds={minX:Math.min(...boxes.map(b=>b.minX)),maxX:Math.max(...boxes.map(b=>b.maxX)),minZ:Math.min(...boxes.map(b=>b.minZ)),maxZ:Math.max(...boxes.map(b=>b.maxZ)),minY:p.y,maxY:p.y+(p.type==='wall'?2.8:2.4)};
+  if(bounds.minX<-32||bounds.maxX>32||bounds.minZ<-33||bounds.maxZ>33||bounds.maxY>11)return'Outside the build area';
+  if(state.builds.filter(b=>b.owner===player.id).length>=BUILD_LIMIT)return'6 pieces active · shoot one down or wait';
+  if(Date.now()-(buildCooldowns.get(player.id)??-Infinity)<1200)return'Build cooling down';
+  for(const c of colliders)if((c.maxY??Infinity)>p.y+.025&&(c.minY??-Infinity)<bounds.maxY-.02&&bounds.minX<c.maxX-.03&&bounds.maxX>c.minX+.03&&bounds.minZ<c.maxZ-.03&&bounds.maxZ>c.minZ+.03)return'Space is blocked';
+  for(const other of Object.values(state.players))if(other.alive&&other.x>bounds.minX-.6&&other.x<bounds.maxX+.6&&other.z>bounds.minZ-.6&&other.z<bounds.maxZ+.6&&(other.y??1.7)-1.7<bounds.maxY&&(other.y??1.7)+.7>bounds.minY)return'Player in the way';
+  for(const [x,z] of MAPS[state.map].spawns)if(x>bounds.minX-1.5&&x<bounds.maxX+1.5&&z>bounds.minZ-1.5&&z<bounds.maxZ+1.5)return'Keep spawn points clear';
+  if(!hasClearShot(new THREE.Vector3(player.x,player.y??1.7,player.z),new THREE.Vector3(p.x,p.y+1,p.z)))return'Placement is behind cover';return'';
+}
+function placeBuild(id,d){
+  const player=state.players[id];if(!state.host||!state.matchActive||!player?.alive)return;
+  world.updateMatrixWorld(true);const piece=candidateBuild(player,d.kind,d.x,d.z,d.rotation),error=buildError(piece,player);
+  if(error){if(id===state.id)toast(error);else state.connections.get(id)?.send({t:'buildError',message:error});return}
+  buildCooldowns.set(id,Date.now());Object.assign(piece,{id:'build-'+(++buildSerial),owner:id,health:150,expiresAt:Date.now()+BUILD_LIFETIME});syncBuilds([...state.builds,piece]);broadcast({t:'builds',builds:state.builds});
+}
+function damageBuild(id,damage){if(!state.host)return;const p=state.builds.find(b=>b.id===id);if(!p)return;p.health-=damage;if(p.health<=0)syncBuilds(state.builds.filter(b=>b.id!==id));broadcast({t:'builds',builds:state.builds})}
+function toggleBuilding(){stopEmote();state.buildMode=!state.buildMode;state.buildRotation=((Math.round(camera.rotation.y/(Math.PI/2))%4)+4)%4;state.fireHeld=false;state.reloading=false;resetAim()}
+function localBuildCandidate(){const forward=new THREE.Vector3(0,0,-4).applyAxisAngle(new THREE.Vector3(0,1,0),camera.rotation.y);return candidateBuild(myPublic(),state.buildType,Math.round(camera.position.x+forward.x),Math.round(camera.position.z+forward.z),state.buildRotation)}
+function requestBuild(){const p=localBuildCandidate();if(!p)return;publishCombatPose();sendHost({t:'build',kind:p.type,x:p.x,z:p.z,rotation:p.rotation})}
+function updateBuilding(){
+  if(state.host&&state.matchActive&&state.builds.some(p=>p.expiresAt<=Date.now())){syncBuilds(state.builds.filter(p=>p.expiresAt>Date.now()));broadcast({t:'builds',builds:state.builds})}
+  if(!state.buildMode||!isPlaying()){if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';return}
+  if(!buildGhost||buildGhost.userData.type!==state.buildType){if(buildGhost)world.remove(buildGhost);buildGhost=buildMesh(state.buildType);buildGhost.userData.type=state.buildType;buildGhost.traverse(m=>{if(m.isMesh){m.material=ghostMaterial;m.castShadow=false}});world.add(buildGhost)}
+  const p=localBuildCandidate(),error=buildError(p,myPublic());buildGhost.visible=!!p;if(p){buildGhost.position.set(p.x,p.y,p.z);buildGhost.rotation.y=p.rotation*Math.PI/2;ghostMaterial.color.set(error?0xff685c:0x55efb4)}
+  weaponModel.visible=meleeModel.visible=false;$('build-hint').textContent=`${state.buildType.toUpperCase()} · ${state.builds.filter(p=>p.owner===state.id).length}/6 · T SWITCH · R ROTATE · CLICK PLACE · B EXIT${error?' — '+error:''}`;
+}
 function updateClimbing(dt){
   const l=ladders[state.climbing];if(!l){state.climbing=null;return}
   if(state.keys.Space){state.climbing=null;state.velocityY=5;return}
@@ -576,13 +681,13 @@ function returnLobby(){if(state.practice){leaveToHome();return}Object.values(sta
 function updateHud(){const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top}
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();renderer.render(scene,camera)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();renderer.render(scene,gameplayCamera())}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
+function clearInput(){stopEmote();state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE + MOVE TO BHOP · ESC MENU';$('control-hint').classList.remove('hidden')}
@@ -605,9 +710,9 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyR')reload();if(e.code==='KeyE'&&!e.repeat)toggleLadder();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=state.buildType==='wall'?'ramp':'wall';if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
-addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0)state.fireHeld=false;if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
+addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(state.buildMode){if(e.button===0){focusGame();requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0)state.fireHeld=false;if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 $('respawn-weapons').onclick=e=>{const button=e.target.closest('[data-respawn-weapon]');if(button)chooseRespawnWeapon(button.dataset.respawnWeapon)};

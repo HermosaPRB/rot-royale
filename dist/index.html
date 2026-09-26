@@ -7,7 +7,7 @@
   <title>Rot Royale</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=vertical-18">
+  <link rel="stylesheet" href="./styles.css?v=build-19">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
@@ -64,7 +64,7 @@
           <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town · NEW</option><option value="piazza">Piazza Panic</option></select>
           <div class="rule-heading">EVERY ROT FOR THEMSELVES</div>
           <p>Most eliminations in 3 minutes wins.</p>
-          <ul><li>Unlimited respawns · 3 seconds</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li><li>Stairs inside each Neon Town house</li><li>E grabs ladders · W/S climbs</li></ul>
+          <ul><li>Unlimited respawns · 3 seconds</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li><li>Stairs inside each Neon Town house</li><li>E dances · near ladders, E grabs them</li><li>B builds · T switches wall/ramp · R rotates</li><li>Click to place · 6 pieces · 150 HP · lasts 45s</li></ul>
           <details class="loot-rules"><summary>Cases & health</summary><p>2 cyber cases: arrive after 20s, refill 65s after collection. Unlocks last this round and survive death.</p><p>Roll: Rare 60% · Epic 30% · Legendary 10%. Damage +6% / +12% / +18%, with faster firing and reloads. Duplicates upgrade at least one tier; maxed weapons are skipped.</p><p>3 health packs: +35 HP, up to 100. Refill after 35s. Full health? Leave it for later.</p></details>
           <div class="room-tip">Create a room and share its code.<br>The host starts when friends arrive.</div>
         </aside>
@@ -118,6 +118,7 @@
       <div id="crosshair" class="crosshair"><i></i><b></b><i></i><b></b></div>
       <div id="control-hint" class="control-hint">WASD TO MOVE · CLICK TO CAPTURE MOUSE</div>
       <div id="ladder-hint" class="ladder-hint"></div>
+      <div id="emote-hint" class="emote-hint"></div><div id="build-hint" class="build-hint"></div>
       <div class="hud-bottom">
         <div class="health-wrap"><span id="health-number">100</span><div class="health-track"><div id="health-bar"></div></div><small>ESPRESSO</small></div>
         <div class="weapon-hud"><small id="weapon-rarity">STANDARD</small><small id="weapon-name">AR</small><strong id="ammo-readout"><span id="ammo">30</span><em>/</em><span id="reserve">∞</span></strong><small id="aim-status">SHIFT / RMB · AIM</small><small id="melee-status">F · EQUIP BAT</small></div>
@@ -131,6 +132,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=vertical-18"></script>
+  <script type="module" src="./game.js?v=build-19"></script>
 </body>
 </html>
