@@ -40,8 +40,8 @@ let tracerMesh,tracerCursor=0;
 const tracerTransform=new THREE.Object3D(),tracerDirection=new THREE.Vector3(),tracerUp=new THREE.Vector3(0,1,0);
 const weaponRigs=new Map();
 const EMOTE_DURATION=4000;let emoteCamera,emoteActor,emoteCharacter;
-const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();let buildSerial=0,buildGhost;
-const BUILD_LIMIT=24,BUILD_LIFETIME=30000;
+const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();let buildSerial=0,buildGhost,buildPreviewAt=-Infinity;
+const BUILD_LIFETIME=30000;
 state.buildHeld=false;state.lastBuildAttempt=-Infinity;state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
 const ghostMaterial=new THREE.MeshBasicMaterial({color:0x55efb4,transparent:true,opacity:.35,depthWrite:false});
 const weaponMotion={kick:0,walk:0,phase:0,yaw:null,pitch:null,swayX:0,swayY:0};
@@ -153,7 +153,7 @@ function initWorld(){
   scene=new THREE.Scene();scene.background=new THREE.Color(0x82c9e8);scene.fog=new THREE.Fog(0x92c9dc,55,125);
   camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,160);camera.position.set(0,1.7,12);
   renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=LOOK_RADIANS_PER_PIXEL/.002;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
+  controls=new PointerLockControls(camera,document.body);controls.pointerSpeed=0;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;state.mouseX=state.mouseY=null;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden')});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
   document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
   scene.add(new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2));const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
@@ -484,7 +484,7 @@ function updateAim(dt){
   state.aimProgress=clamp(state.aimProgress+(target?dt/profile.raise:-dt/profile.lower),0,1);state.aimBlend=smoothStep(state.aimProgress);
   const fov=THREE.MathUtils.lerp(76,profile.fov,state.aimBlend);
   if(Math.abs(camera.fov-fov)>.001){camera.fov=fov;camera.updateProjectionMatrix()}
-  controls.pointerSpeed=LOOK_RADIANS_PER_PIXEL/.002*aimSensitivity();
+  controls.pointerSpeed=0;
   const scoped=state.selectedWeapon==='sniper'&&state.aimBlend>.78;
   $('scope-overlay').hidden=!scoped;$('scope-overlay').style.opacity=String(smoothStep((state.aimBlend-.78)/.22));
   $('crosshair').style.opacity=String(1-smoothStep(state.aimBlend/.7));
@@ -494,7 +494,7 @@ function aimSensitivity(){return state.aimBlend?Math.tan(THREE.MathUtils.degToRa
 function resetAim(){
   state.aiming=false;state.aimProgress=state.aimBlend=0;
   if(camera){camera.fov=76;camera.updateProjectionMatrix()}
-  if(controls)controls.pointerSpeed=LOOK_RADIANS_PER_PIXEL/.002;
+  if(controls)controls.pointerSpeed=0;
   $('scope-overlay').hidden=true;$('crosshair').style.opacity='1';
 }
 function updateWeaponMotion(dt,now){
@@ -529,6 +529,7 @@ function updateWeaponMotion(dt,now){
   rig.userData.flash.scale.setScalar(1+Math.sin(now)*.12);
 }
 
+function advanceMovement(dt){const steps=Math.max(1,Math.ceil(dt*120)),step=dt/steps;for(let i=0;i<steps;i++)updateMovement(step)}
 function updateMovement(dt){
   if(!isPlaying())return;
   if(state.emoteUntil){if(Date.now()>=state.emoteUntil||['KeyW','KeyA','KeyS','KeyD','Space'].some(k=>state.keys[k]))stopEmote();else{updateVerticalMovement(dt);return}}
@@ -668,7 +669,6 @@ function candidateBuild(player,type,x,z,rotation,y){
 function buildError(p,player){
   if(!p)return'Aim at nearby ground or a build edge';const boxes=buildBoxes(p);
   if(boxes.some(b=>b.minX<-32||b.maxX>32||b.minZ<-33||b.maxZ>33||b.maxY>56))return'Outside the build area';
-  if(state.builds.filter(b=>b.owner===player.id).length>=BUILD_LIMIT)return'24 pieces active · shoot one down or wait';
   if(Date.now()-(buildCooldowns.get(player.id)??-Infinity)<250)return'Build cooling down';
   for(const b of boxes)for(const c of colliders){
     // Floors sit just below the socket height and may meet their supporting piece.
@@ -691,21 +691,21 @@ function damageBuild(id,damage){if(!state.host)return;const p=state.builds.find(
 function toggleBuilding(){stopEmote();state.buildHeld=false;state.buildMode=!state.buildMode;state.buildRotation=((Math.round(camera.rotation.y/(Math.PI/2))%4)+4)%4;state.fireHeld=false;state.reloading=false;resetAim()}
 function localBuildCandidate(){
   const player=myPublic(),direction=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation),origin=camera.position;
-  let best=null,score=Infinity;
-  for(const p of buildOptions(player,state.buildType,state.buildRotation)){
+  const ranked=buildOptions(player,state.buildType,state.buildRotation).map(p=>{
     const delta=new THREE.Vector3(p.x,p.y+(p.type==='floor'?0:1.4),p.z).sub(origin),distance=delta.length(),along=delta.dot(direction);
-    if(along<.5)continue;const angle=1-along/Math.max(.01,distance),error=buildError(p,player),rank=angle*25+Math.abs(distance-4)*.12+(error&&error!=='Build cooling down'?12:0);
-    if(rank<score){score=rank;best=p}
-  }
-  return best;
+    return{p,score:along<.5?Infinity:(1-along/Math.max(.01,distance))*25+Math.abs(distance-4)*.12};
+  }).filter(o=>Number.isFinite(o.score)).sort((a,b)=>a.score-b.score);
+  // Only validate the nearest crosshair choices, not every socket in the map.
+  for(const {p}of ranked.slice(0,8)){const error=buildError(p,player);if(!error||error==='Build cooling down')return p}
+  return ranked[0]?.p||null;
 }
 function requestBuild(){if(Date.now()-state.lastBuildAttempt<260)return;state.lastBuildAttempt=Date.now();const p=localBuildCandidate();if(!p||buildError(p,myPublic()))return;publishCombatPose();sendHost({t:'build',kind:p.type,x:p.x,y:p.y,z:p.z,rotation:p.rotation})}
 function updateBuilding(){
   if(state.host&&state.matchActive&&state.builds.some(p=>p.expiresAt<=Date.now())){syncBuilds(state.builds.filter(p=>p.expiresAt>Date.now()));broadcast({t:'builds',builds:state.builds})}
   if(!state.buildMode||!isPlaying()){if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';return}
   if(!buildGhost||buildGhost.userData.type!==state.buildType){if(buildGhost)world.remove(buildGhost);buildGhost=buildMesh(state.buildType);buildGhost.userData.type=state.buildType;buildGhost.traverse(m=>{if(m.isMesh){m.material=ghostMaterial;m.castShadow=false}});world.add(buildGhost)}
-  if(state.buildHeld)requestBuild();const p=localBuildCandidate(),error=buildError(p,myPublic());buildGhost.visible=!!p;if(p){buildGhost.position.set(p.x,p.y,p.z);buildGhost.rotation.y=p.rotation*Math.PI/2;ghostMaterial.color.set(error?0xff685c:0x55efb4)}
-  weaponModel.visible=meleeModel.visible=false;$('build-hint').textContent=`${state.buildType.toUpperCase()} · ${state.builds.filter(p=>p.owner===state.id).length}/24 · 30s · T SWITCH · R ROTATE · HOLD CLICK BUILD · B EXIT${error?' — '+error:''}`;
+  if(state.buildHeld)requestBuild();if(performance.now()-buildPreviewAt<50){weaponModel.visible=meleeModel.visible=false;return}buildPreviewAt=performance.now();const p=localBuildCandidate(),error=buildError(p,myPublic());buildGhost.visible=!!p;if(p){buildGhost.position.set(p.x,p.y,p.z);buildGhost.rotation.y=p.rotation*Math.PI/2;ghostMaterial.color.set(error?0xff685c:0x55efb4)}
+  weaponModel.visible=meleeModel.visible=false;$('build-hint').textContent=`${state.buildType.toUpperCase()} · UNLIMITED · 30s · T SWITCH · R ROTATE · HOLD CLICK BUILD · B EXIT${error?' — '+error:''}`;
 }
 function updateClimbing(dt){
   const l=ladders[state.climbing];if(!l){state.climbing=null;return}
@@ -723,7 +723,7 @@ function returnLobby(){if(state.practice){leaveToHome();return}Object.values(sta
 function updateHud(){const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top}
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();renderer.render(scene,gameplayCamera())}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();renderer.render(scene,gameplayCamera())}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -734,18 +734,27 @@ function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE + MOVE TO BHOP · ESC MENU';$('control-hint').classList.remove('hidden')}
 function handleMouseLook(e){
-  // Turn from actual mouse movement only, never from proximity to a screen edge.
-  if(!isPlaying()||controls.isLocked||e.target!==$('game'))return;
+  // One rotation owner for both capture and fallback: no competing pitch limits.
+  if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;
+  let dx=0,dy=0;
+  if(controls.isLocked){dx=Number.isFinite(e.movementX)?e.movementX:0;dy=Number.isFinite(e.movementY)?e.movementY:0;}
+  else{
+    // Embedded browsers can report zero or inconsistent movementX/Y. Screen
+    // coordinates are stable here; re-entry only establishes a new baseline.
+    if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY)){
+      if(state.mouseX!==null&&state.mouseY!==null){dx=e.clientX-state.mouseX;dy=e.clientY-state.mouseY}
+      state.mouseX=e.clientX;state.mouseY=e.clientY;
+      if(Math.abs(dx)>innerWidth*.5||Math.abs(dy)>innerHeight*.5){dx=dy=0}
+    }else{dx=Number.isFinite(e.movementX)?e.movementX:0;dy=Number.isFinite(e.movementY)?e.movementY:0}
+  }
   state.mouseOver=true;
-  const dx=Number.isFinite(e.movementX)?e.movementX:(state.mouseX===null?0:e.clientX-state.mouseX);
-  const dy=Number.isFinite(e.movementY)?e.movementY:(state.mouseY===null?0:e.clientY-state.mouseY);
-  state.mouseX=e.clientX;state.mouseY=e.clientY;
-  camera.rotation.y-=clamp(dx,-120,120)*LOOK_RADIANS_PER_PIXEL*aimSensitivity();
-  camera.rotation.x=clamp(camera.rotation.x-clamp(dy,-120,120)*LOOK_RADIANS_PER_PIXEL*aimSensitivity(),-1.45,1.45);
+  const sensitivity=LOOK_RADIANS_PER_PIXEL*aimSensitivity();
+  camera.rotation.order='YXZ';camera.rotation.y-=dx*sensitivity;
+  camera.rotation.x=clamp(camera.rotation.x-dy*sensitivity,-1.45,1.45);camera.rotation.z=0;
 }
 function requestMouseCapture(){
   if(isPlaying())focusGame();
-  if(!isPlaying()||state.pointerLockFailed||state.capturePending||controls.isLocked)return;
+  if(!isPlaying()||state.capturePending||controls.isLocked)return;
   if(!document.body.requestPointerLock){useFallbackControls();return}
   state.capturePending=true;
   try{const pending=document.body.requestPointerLock();if(pending?.catch)pending.catch(useFallbackControls)}catch{useFallbackControls()}
