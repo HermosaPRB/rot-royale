@@ -41,8 +41,8 @@ const tracerTransform=new THREE.Object3D(),tracerDirection=new THREE.Vector3(),t
 const weaponRigs=new Map();
 const EMOTE_DURATION=4000;let emoteCamera,emoteActor,emoteCharacter;
 const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();let buildSerial=0,buildGhost;
-const BUILD_LIMIT=6,BUILD_LIFETIME=45000;
-state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
+const BUILD_LIMIT=24,BUILD_LIFETIME=30000;
+state.buildHeld=false;state.lastBuildAttempt=-Infinity;state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
 const ghostMaterial=new THREE.MeshBasicMaterial({color:0x55efb4,transparent:true,opacity:.35,depthWrite:false});
 const weaponMotion={kick:0,walk:0,phase:0,yaw:null,pitch:null,swayX:0,swayY:0};
 const AIM_PROFILES={
@@ -260,7 +260,7 @@ function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
   if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
   if(d.t==='build')placeBuild(from,d);
-  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,14);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun'}
+  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,64);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun'}
   if(d.t==='shot')resolveShot(from);
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
   if(d.t==='melee')resolveMelee(from);
@@ -616,7 +616,7 @@ function gameplayCamera(){
   weaponModel.visible=meleeModel.visible=false;$('crosshair').style.opacity='0';$('emote-hint').textContent='BAT SHAKE · E, MOVE OR ATTACK TO CANCEL';return emoteCamera;
 }
 function buildBoxes(piece){
-  const local=piece.type==='wall'?[{x:0,y:1.4,z:0,w:4,h:2.8,d:.30}]:Array.from({length:12},(_,i)=>({x:0,y:(i+1)*.10,z:2.4-(i+.5)*.4,w:3,h:(i+1)*.2,d:.4,stair:true}));
+  const local=piece.type==='wall'?[{x:0,y:1.4,z:0,w:4,h:2.8,d:.30}]:piece.type==='floor'?[{x:0,y:-.08,z:0,w:4,h:.16,d:4}]:Array.from({length:14},(_,i)=>({x:0,y:(i+1)*.10,z:2-(i+.5)*4/14,w:4,h:(i+1)*.2,d:4/14,stair:true}));
   const angle=piece.rotation*Math.PI/2,s=Math.round(Math.sin(angle)),c=Math.round(Math.cos(angle));
   return local.map(b=>{const x=piece.x+b.x*c+b.z*s,z=piece.z-b.x*s+b.z*c,w=Math.abs(c)?b.w:b.d,d=Math.abs(c)?b.d:b.w;return{minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,minY:piece.y+b.y-b.h/2,maxY:piece.y+b.y+b.h/2,stair:!!b.stair,buildId:piece.id}});
 }
@@ -624,7 +624,7 @@ function buildMesh(type){
   if(!buildTemplates.has(type)){const root=new THREE.Group(),panel=new THREE.MeshStandardMaterial({color:0x5a9ea8,roughness:.7,metalness:.2}),trim=new THREE.MeshStandardMaterial({color:0x253e54,roughness:.5});
     const add=(x,y,z,w,h,d,m)=>{const part=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);part.position.set(x,y,z);part.castShadow=part.receiveShadow=true;root.add(part)};
     const boxes=buildBoxes({type,x:0,y:0,z:0,rotation:0});for(const b of boxes)add((b.minX+b.maxX)/2,(b.minY+b.maxY)/2,(b.minZ+b.maxZ)/2,b.maxX-b.minX,b.maxY-b.minY,b.maxZ-b.minZ,panel);
-    if(type==='wall'){for(const x of [-1.9,0,1.9])add(x,1.4,0,.12,2.85,.36,trim);for(const y of [.08,1.4,2.72])add(0,y,0,4,.12,.36,trim)}else for(let i=0;i<12;i++)add(0,(i+1)*.2+.01,2.4-i*.4,3,.03,.06,trim);
+    if(type==='wall'){for(const x of [-1.9,0,1.9])add(x,1.4,0,.12,2.85,.36,trim);for(const y of [.08,1.4,2.72])add(0,y,0,4,.12,.36,trim)}else if(type==='ramp')for(let i=0;i<14;i++)add(0,(i+1)*.2+.01,2-i*4/14,4,.03,.04,trim);else for(const x of [-1.9,0,1.9])add(x,-.08,0,.08,.18,4,trim);
     mergeRigidParts(root);buildTemplates.set(type,root)}return buildTemplates.get(type).clone(true);
 }
 function syncBuilds(records){
@@ -632,38 +632,80 @@ function syncBuilds(records){
   for(const [id,o] of buildObjects)if(!keep.has(id)){world.remove(o.root);for(let i=colliders.length-1;i>=0;i--)if(colliders[i].buildId===id)colliders.splice(i,1);for(let i=shotBlockers.length-1;i>=0;i--)if(shotBlockers[i].userData.buildId===id)shotBlockers.splice(i,1);buildObjects.delete(id)}
   for(const p of records)if(!buildObjects.has(p.id)){const root=buildMesh(p.type);root.position.set(p.x,p.y,p.z);root.rotation.y=p.rotation*Math.PI/2;root.traverse(m=>{if(m.isMesh){m.userData.buildId=p.id;shotBlockers.push(m)}});colliders.push(...buildBoxes(p));world.add(root);buildObjects.set(p.id,{root})}
 }
-function candidateBuild(player,type,x,z,rotation){
-  if(!['wall','ramp'].includes(type)||![x,z,rotation].every(Number.isFinite)||!Number.isInteger(rotation)||rotation<0||rotation>3)return null;
-  x=Math.round(x);z=Math.round(z);if(Math.hypot(x-player.x,z-player.z)>6)return null;let y=0;
-  for(const c of colliders)if(Number.isFinite(c.maxY)&&c.maxY<=(player.y??1.7)-1.7+.35&&x>=c.minX&&x<=c.maxX&&z>=c.minZ&&z<=c.maxZ)y=Math.max(y,c.maxY);
-  if(Math.hypot(x-player.x,z-player.z,y-((player.y??1.7)-1.7))>6)return null;return{type,x,z,y,rotation};
+// Shared sockets make preview and host validation use identical attachment rules.
+function buildOptions(player,type,rotation){
+  if(!['wall','ramp','floor'].includes(type)||!Number.isInteger(rotation)||rotation<0||rotation>3)return[];
+  const options=[],feet=(player.y??1.7)-1.7,add=(x,y,z,support=null)=>{
+    if(y<0||y+2.8>56||Math.hypot(x-player.x,z-player.z,y-feet)>9)return;
+    options.push({type,x,y:Math.round(y*100)/100,z,rotation,support});
+  };
+  const gx=Math.round(player.x/4)*4,gz=Math.round(player.z/4)*4;
+  for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++){
+    const x=gx+dx*4,z=gz+dz*4;let y=0;
+    for(const c of colliders)if(!c.buildId&&Number.isFinite(c.maxY)&&c.maxY<=feet+.35&&x>=c.minX&&x<=c.maxX&&z>=c.minZ&&z<=c.maxZ)y=Math.max(y,c.maxY);
+    add(x,y,z);
+  }
+  for(const p of state.builds){
+    if(p.type==='wall'){
+      if(type==='wall')add(p.x,p.y+2.8,p.z,p.id);
+      else{const nx=Math.round(Math.sin(p.rotation*Math.PI/2)),nz=Math.round(Math.cos(p.rotation*Math.PI/2));for(const side of [-1,1])add(p.x+nx*2*side,p.y+2.8,p.z+nz*2*side,p.id)}
+    }else if(p.type==='ramp'){
+      const fx=-Math.round(Math.sin(p.rotation*Math.PI/2)),fz=-Math.round(Math.cos(p.rotation*Math.PI/2));
+      if(type==='wall')add(p.x+fx*2,p.y+2.8,p.z+fz*2,p.id);
+      else add(p.x+fx*4,p.y+2.8,p.z+fz*4,p.id);
+    }else{
+      if(type==='wall'){for(const side of [-1,1])add(p.x+Math.round(Math.sin(rotation*Math.PI/2))*2*side,p.y,p.z+Math.round(Math.cos(rotation*Math.PI/2))*2*side,p.id)}
+      else if(type==='ramp')add(p.x,p.y,p.z,p.id);
+      else for(const [dx,dz]of [[4,0],[-4,0],[0,4],[0,-4]])add(p.x+dx,p.y,p.z+dz,p.id);
+    }
+  }
+  return options;
+}
+function candidateBuild(player,type,x,z,rotation,y){
+  if(![x,z,rotation].every(Number.isFinite)||(y!==undefined&&!Number.isFinite(y)))return null;
+  return buildOptions(player,type,rotation).find(p=>Math.abs(p.x-x)<.02&&Math.abs(p.z-z)<.02&&(y===undefined||Math.abs(p.y-y)<.02))||null;
 }
 function buildError(p,player){
-  if(!p)return'Too far away';const boxes=buildBoxes(p),bounds={minX:Math.min(...boxes.map(b=>b.minX)),maxX:Math.max(...boxes.map(b=>b.maxX)),minZ:Math.min(...boxes.map(b=>b.minZ)),maxZ:Math.max(...boxes.map(b=>b.maxZ)),minY:p.y,maxY:p.y+(p.type==='wall'?2.8:2.4)};
-  if(bounds.minX<-32||bounds.maxX>32||bounds.minZ<-33||bounds.maxZ>33||bounds.maxY>11)return'Outside the build area';
-  if(state.builds.filter(b=>b.owner===player.id).length>=BUILD_LIMIT)return'6 pieces active · shoot one down or wait';
-  if(Date.now()-(buildCooldowns.get(player.id)??-Infinity)<1200)return'Build cooling down';
-  for(const c of colliders)if((c.maxY??Infinity)>p.y+.025&&(c.minY??-Infinity)<bounds.maxY-.02&&bounds.minX<c.maxX-.03&&bounds.maxX>c.minX+.03&&bounds.minZ<c.maxZ-.03&&bounds.maxZ>c.minZ+.03)return'Space is blocked';
-  for(const other of Object.values(state.players))if(other.alive&&other.x>bounds.minX-.6&&other.x<bounds.maxX+.6&&other.z>bounds.minZ-.6&&other.z<bounds.maxZ+.6&&(other.y??1.7)-1.7<bounds.maxY&&(other.y??1.7)+.7>bounds.minY)return'Player in the way';
-  for(const [x,z] of MAPS[state.map].spawns)if(x>bounds.minX-1.5&&x<bounds.maxX+1.5&&z>bounds.minZ-1.5&&z<bounds.maxZ+1.5)return'Keep spawn points clear';
-  if(!hasClearShot(new THREE.Vector3(player.x,player.y??1.7,player.z),new THREE.Vector3(p.x,p.y+1,p.z)))return'Placement is behind cover';return'';
+  if(!p)return'Aim at nearby ground or a build edge';const boxes=buildBoxes(p);
+  if(boxes.some(b=>b.minX<-32||b.maxX>32||b.minZ<-33||b.maxZ>33||b.maxY>56))return'Outside the build area';
+  if(state.builds.filter(b=>b.owner===player.id).length>=BUILD_LIMIT)return'24 pieces active · shoot one down or wait';
+  if(Date.now()-(buildCooldowns.get(player.id)??-Infinity)<250)return'Build cooling down';
+  for(const b of boxes)for(const c of colliders){
+    // Floors sit just below the socket height and may meet their supporting piece.
+    if(c.buildId===p.support&&p.type==='floor')continue;
+    if((c.maxY??Infinity)>b.minY+.025&&(c.minY??-Infinity)<b.maxY-.025&&b.minX<c.maxX-.03&&b.maxX>c.minX+.03&&b.minZ<c.maxZ-.03&&b.maxZ>c.minZ+.03)return'Space is blocked';
+  }
+  for(const b of boxes)for(const other of Object.values(state.players))if(other.alive&&other.x>b.minX-.55&&other.x<b.maxX+.55&&other.z>b.minZ-.55&&other.z<b.maxZ+.55&&(other.y??1.7)-1.7<b.maxY-.25&&(other.y??1.7)+.7>b.minY)return'Player in the way';
+  if(p.y<3)for(const b of boxes)for(const [x,z]of MAPS[state.map].spawns)if(x>b.minX-1.5&&x<b.maxX+1.5&&z>b.minZ-1.5&&z<b.maxZ+1.5)return'Keep spawn points clear';
+  const from=new THREE.Vector3(player.x,player.y??1.7,player.z),to=new THREE.Vector3(p.x,p.y+(p.type==='floor'?.2:1.4),p.z),direction=to.sub(from);raycaster.set(from,direction.clone().normalize());raycaster.far=direction.length();
+  if(raycaster.intersectObjects(shotBlockers,false).some(hit=>hit.object.userData.buildId!==p.support))return'Placement is behind cover';
+  return'';
 }
 function placeBuild(id,d){
   const player=state.players[id];if(!state.host||!state.matchActive||!player?.alive)return;
-  world.updateMatrixWorld(true);const piece=candidateBuild(player,d.kind,d.x,d.z,d.rotation),error=buildError(piece,player);
+  world.updateMatrixWorld(true);const piece=candidateBuild(player,d.kind,d.x,d.z,d.rotation,d.y),error=buildError(piece,player);
   if(error){if(id===state.id)toast(error);else state.connections.get(id)?.send({t:'buildError',message:error});return}
   buildCooldowns.set(id,Date.now());Object.assign(piece,{id:'build-'+(++buildSerial),owner:id,health:150,expiresAt:Date.now()+BUILD_LIFETIME});syncBuilds([...state.builds,piece]);broadcast({t:'builds',builds:state.builds});
 }
 function damageBuild(id,damage){if(!state.host)return;const p=state.builds.find(b=>b.id===id);if(!p)return;p.health-=damage;if(p.health<=0)syncBuilds(state.builds.filter(b=>b.id!==id));broadcast({t:'builds',builds:state.builds})}
-function toggleBuilding(){stopEmote();state.buildMode=!state.buildMode;state.buildRotation=((Math.round(camera.rotation.y/(Math.PI/2))%4)+4)%4;state.fireHeld=false;state.reloading=false;resetAim()}
-function localBuildCandidate(){const forward=new THREE.Vector3(0,0,-4).applyAxisAngle(new THREE.Vector3(0,1,0),camera.rotation.y);return candidateBuild(myPublic(),state.buildType,Math.round(camera.position.x+forward.x),Math.round(camera.position.z+forward.z),state.buildRotation)}
-function requestBuild(){const p=localBuildCandidate();if(!p)return;publishCombatPose();sendHost({t:'build',kind:p.type,x:p.x,z:p.z,rotation:p.rotation})}
+function toggleBuilding(){stopEmote();state.buildHeld=false;state.buildMode=!state.buildMode;state.buildRotation=((Math.round(camera.rotation.y/(Math.PI/2))%4)+4)%4;state.fireHeld=false;state.reloading=false;resetAim()}
+function localBuildCandidate(){
+  const player=myPublic(),direction=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation),origin=camera.position;
+  let best=null,score=Infinity;
+  for(const p of buildOptions(player,state.buildType,state.buildRotation)){
+    const delta=new THREE.Vector3(p.x,p.y+(p.type==='floor'?0:1.4),p.z).sub(origin),distance=delta.length(),along=delta.dot(direction);
+    if(along<.5)continue;const angle=1-along/Math.max(.01,distance),error=buildError(p,player),rank=angle*25+Math.abs(distance-4)*.12+(error&&error!=='Build cooling down'?12:0);
+    if(rank<score){score=rank;best=p}
+  }
+  return best;
+}
+function requestBuild(){if(Date.now()-state.lastBuildAttempt<260)return;state.lastBuildAttempt=Date.now();const p=localBuildCandidate();if(!p||buildError(p,myPublic()))return;publishCombatPose();sendHost({t:'build',kind:p.type,x:p.x,y:p.y,z:p.z,rotation:p.rotation})}
 function updateBuilding(){
   if(state.host&&state.matchActive&&state.builds.some(p=>p.expiresAt<=Date.now())){syncBuilds(state.builds.filter(p=>p.expiresAt>Date.now()));broadcast({t:'builds',builds:state.builds})}
   if(!state.buildMode||!isPlaying()){if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';return}
   if(!buildGhost||buildGhost.userData.type!==state.buildType){if(buildGhost)world.remove(buildGhost);buildGhost=buildMesh(state.buildType);buildGhost.userData.type=state.buildType;buildGhost.traverse(m=>{if(m.isMesh){m.material=ghostMaterial;m.castShadow=false}});world.add(buildGhost)}
-  const p=localBuildCandidate(),error=buildError(p,myPublic());buildGhost.visible=!!p;if(p){buildGhost.position.set(p.x,p.y,p.z);buildGhost.rotation.y=p.rotation*Math.PI/2;ghostMaterial.color.set(error?0xff685c:0x55efb4)}
-  weaponModel.visible=meleeModel.visible=false;$('build-hint').textContent=`${state.buildType.toUpperCase()} · ${state.builds.filter(p=>p.owner===state.id).length}/6 · T SWITCH · R ROTATE · CLICK PLACE · B EXIT${error?' — '+error:''}`;
+  if(state.buildHeld)requestBuild();const p=localBuildCandidate(),error=buildError(p,myPublic());buildGhost.visible=!!p;if(p){buildGhost.position.set(p.x,p.y,p.z);buildGhost.rotation.y=p.rotation*Math.PI/2;ghostMaterial.color.set(error?0xff685c:0x55efb4)}
+  weaponModel.visible=meleeModel.visible=false;$('build-hint').textContent=`${state.buildType.toUpperCase()} · ${state.builds.filter(p=>p.owner===state.id).length}/24 · 30s · T SWITCH · R ROTATE · HOLD CLICK BUILD · B EXIT${error?' — '+error:''}`;
 }
 function updateClimbing(dt){
   const l=ladders[state.climbing];if(!l){state.climbing=null;return}
@@ -687,7 +729,7 @@ function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){stopEmote();state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
+function clearInput(){stopEmote();state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE + MOVE TO BHOP · ESC MENU';$('control-hint').classList.remove('hidden')}
@@ -710,9 +752,9 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=state.buildType==='wall'?'ramp':'wall';if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
-addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(state.buildMode){if(e.button===0){focusGame();requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0)state.fireHeld=false;if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
+addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 $('respawn-weapons').onclick=e=>{const button=e.target.closest('[data-respawn-weapon]');if(button)chooseRespawnWeapon(button.dataset.respawnWeapon)};
