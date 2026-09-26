@@ -3,9 +3,9 @@ import {mergeRigidParts} from './surface-details.js?v=detail-6';
 
 const gunTemplates=new Map();let batTemplate;
 // Shared, material-batched templates: close-up detail is paid for only on the local gun.
-export function createHeldGun(color,type='ar',detailed=false){
+export function createHeldGun(color,type='ar',detailed=false,rarity=0){
   if(!['ar','shotgun','sniper','smg'].includes(type))type='ar';
-  const key=`${color}:${type}:${detailed}`;
+  const key=`${color}:${type}:${detailed}:${rarity}`;
   if(!gunTemplates.has(key)){
     const g=new THREE.Group(),paint=new THREE.MeshStandardMaterial({color,roughness:.38,metalness:.22}),
       metal=new THREE.MeshStandardMaterial({color:0x40515b,roughness:.38,metalness:.3}),
@@ -94,6 +94,18 @@ export function createHeldGun(color,type='ar',detailed=false){
       // Espresso-gold receiver inlay; no extra texture or draw call.
       box(.192,1.46,-.465,.007,.013,.058,brass);
     }
+    if(rarity){
+      // Cyber armor leaves the original sight line and animation pivots unobstructed.
+      paint.color.setHex(0x233349);paint.metalness=.65;
+      const energy=new THREE.MeshBasicMaterial({color}),armor=new THREE.MeshStandardMaterial({color:0x8095a7,roughness:.3,metalness:.65});
+      for(const x of [.027,.213]){box(x,1.47,-.49,.035,.14,.27,armor,true);box(x+(x>.12?.02:-.02),1.48,-.49,.012,.028,.23,energy)}
+      const coilStart=type==='sniper'?-1.10:type==='shotgun'?-.93:type==='smg'?-.66:-.77;
+      for(let i=0;i<3+rarity;i++){const z=coilStart-i*.045;tube(.12,1.49,z,.043,.018,armor);tube(.12,1.49,z-.012,.044,.006,energy)}
+      for(let i=0;i<rarity;i++)box(.237,1.53,-.40-i*.047,.013,.018,.025,energy);
+      box(0,-.04,-.071,.07,.075,.014,energy,false,magazine);
+      if(type==='sniper')for(const x of [.045,.195])box(x,1.45,-1.25,.025,.08,.38,armor,true);
+      if(type==='shotgun')for(const x of [.052,.188])box(x,1.43,-.72,.018,.07,.22,energy,false,action);
+    }
     const muzzle=new THREE.Object3D();muzzle.name='muzzle';muzzle.position.set(.12,1.49,tip-.07);g.add(muzzle);
     const sight=new THREE.Object3D();sight.name='sight';sight.position.set(.12,sightY,sightZ);g.add(sight);
     if(!detailed)for(const group of [magazine,action])for(const part of [...group.children]){part.position.add(group.position);g.add(part)}
@@ -103,8 +115,8 @@ export function createHeldGun(color,type='ar',detailed=false){
   gun.userData.magazine=gun.getObjectByName('magazine');gun.userData.muzzle=gun.getObjectByName('muzzle');gun.userData.sight=gun.getObjectByName('sight');gun.userData.action=gun.getObjectByName('action');return gun;
 }
 
-export function createFirstPersonWeapon(color,type){
-  const rig=new THREE.Group(),gun=createHeldGun(color,type,true);rig.add(gun);rig.userData.gun=gun;rig.position.set(.16,-.06,-.28);rig.rotation.y=.20;
+export function createFirstPersonWeapon(color,type,rarity=0){
+  const rig=new THREE.Group(),gun=createHeldGun(color,type,true,rarity);rig.add(gun);rig.userData.gun=gun;rig.position.set(.16,-.06,-.28);rig.rotation.y=.20;
   gun.position.set(.16,-1.74,-.32);
   const skin=new THREE.MeshStandardMaterial({color:0xd8954d,roughness:.56});
   for(const [name,a,b] of [['trigger',[.55,-.7,-.02],[.31,-.375,-.66]],['support',[-.3,-.7,-.04],[.24,-.29,-.96]]]){

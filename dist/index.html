@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Rot Royale is a fast, coffee-splattered multiplayer arena shooter set in a chaotic Italian plaza.">
+  <meta name="description" content="Rot Royale: fast multiplayer arena combat in Neon Town and Piazza Panic. Find cyber weapon cases, chain bunny hops, and rule the round.">
   <title>Rot Royale</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=tracers-15">
+  <link rel="stylesheet" href="./styles.css?v=neon-16">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
@@ -59,11 +59,13 @@
 
         <aside class="match-info lobby-panel">
           <div class="map-kicker">THE ARENA</div>
-          <h2>PIAZZA<br>PANIC</h2>
-          <p class="map-location">Italian plaza · Up to 6 players</p>
+          <h2 id="map-title">NEON TOWN</h2>
+          <p id="map-description" class="map-location">Two houses · vehicle choke · garden flanks</p>
+          <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town · NEW</option><option value="piazza">Piazza Panic</option></select>
           <div class="rule-heading">EVERY ROT FOR THEMSELVES</div>
           <p>Most eliminations in 3 minutes wins.</p>
-          <ul><li>Unlimited respawns · 3 seconds</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Coffee splatter. Zero blood.</li></ul>
+          <ul><li>Unlimited respawns · 3 seconds</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li></ul>
+          <details class="loot-rules"><summary>Cases & health</summary><p>2 cyber cases: arrive after 20s, refill 65s after collection. Unlocks last this round and survive death.</p><p>Roll: Rare 60% · Epic 30% · Legendary 10%. Damage +6% / +12% / +18%, with faster firing and reloads. Duplicates upgrade at least one tier; maxed weapons are skipped.</p><p>3 health packs: +35 HP, up to 100. Refill after 35s. Full health? Leave it for later.</p></details>
           <div class="room-tip">Create a room and share its code.<br>The host starts when friends arrive.</div>
         </aside>
         <aside class="rules-strip" aria-label="How to play">
@@ -98,7 +100,7 @@
     <section id="results" class="screen" aria-labelledby="result-title">
       <div class="modal-card results-card">
         <div class="eyebrow">MATCH COMPLETE</div>
-        <h2 id="result-title">The plaza has spoken.</h2>
+        <h2 id="result-title">The arena has spoken.</h2>
         <div id="podium" class="podium"></div>
         <button id="play-again" class="primary">Return to lobby</button>
         <button id="results-home" class="text-button">Main menu</button>
@@ -108,7 +110,7 @@
     <section id="hud" aria-label="Game status">
       <div class="hud-top">
         <div class="score-chip"><small>YOUR KILLS</small><strong id="kills">0</strong></div>
-        <div class="timer"><small>PLAZA CLOSES IN</small><strong id="timer">3:00</strong></div>
+        <div class="timer"><small>ROUND ENDS IN</small><strong id="timer">3:00</strong></div>
         <div class="score-chip"><small>LEADER</small><strong id="leader">0</strong></div>
       </div>
       <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
@@ -117,16 +119,17 @@
       <div id="control-hint" class="control-hint">WASD TO MOVE · CLICK TO CAPTURE MOUSE</div>
       <div class="hud-bottom">
         <div class="health-wrap"><span id="health-number">100</span><div class="health-track"><div id="health-bar"></div></div><small>ESPRESSO</small></div>
-        <div class="weapon-hud"><small id="weapon-name">AR</small><strong id="ammo-readout"><span id="ammo">30</span><em>/</em><span id="reserve">∞</span></strong><small id="aim-status">SHIFT / RMB · AIM</small><small id="melee-status">F · EQUIP BAT</small></div>
+        <div class="weapon-hud"><small id="weapon-rarity">STANDARD</small><small id="weapon-name">AR</small><strong id="ammo-readout"><span id="ammo">30</span><em>/</em><span id="reserve">∞</span></strong><small id="aim-status">SHIFT / RMB · AIM</small><small id="melee-status">F · EQUIP BAT</small></div>
       </div>
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="headshot-callout" class="headshot-callout">HEADSHOT <small>2× DAMAGE</small></div>
       <div id="damage-flash"></div>
+      <div id="loot-notice" class="loot-notice" role="status" aria-live="polite"></div>
       <div id="respawn" class="respawn"><div class="respawn-card"><strong>Cooling the espresso…</strong><span id="respawn-time">3</span><p>Switch it up? Click a weapon or press 1–4.</p><div id="respawn-weapons" class="respawn-weapons" aria-label="Next-spawn loadout"></div><p id="respawn-loadout-note" aria-live="polite"></p><small>Respawning automatically · keep playing, no extra menu</small></div></div>
     </section>
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=tracers-15"></script>
+  <script type="module" src="./game.js?v=neon-16"></script>
 </body>
 </html>
