@@ -48,7 +48,6 @@ const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
 const weaponDescriptions={ar:'Full auto / medium range',shotgun:'Heavy / close range',sniper:'Precision / long range',smg:'Full auto / mobile'};
 // Shared sensitivity keeps captured and embedded-browser mouse look consistent.
 const LOOK_RADIANS_PER_PIXEL=.00656;
-const EDGE_TURN_RADIANS_PER_SECOND=5.6;
 const colliders=[];
 const shotBlockers=[];
 const materials=new Map();
@@ -431,7 +430,7 @@ function returnLobby(){if(state.practice){leaveToHome();return}Object.values(sta
 function updateHud(){const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top}
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]];const p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMouseEdgeTurn(dt);updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();renderer.render(scene,camera)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){if(!matchMedia('(prefers-reduced-motion: reduce)').matches){lobbyFighter.rotation.y=-.35+Math.sin(now*.0007)*.14;lobbyFighter.position.y=Math.sin(now*.002)*.008}lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){updateMovement(dt);updateBots(dt);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();renderer.render(scene,camera)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -442,6 +441,7 @@ function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE JUMP · ESC MENU';$('control-hint').classList.remove('hidden')}
 function handleMouseLook(e){
+  // Turn from actual mouse movement only, never from proximity to a screen edge.
   if(!isPlaying()||controls.isLocked||e.target!==$('game'))return;
   state.mouseOver=true;
   const dx=Number.isFinite(e.movementX)?e.movementX:(state.mouseX===null?0:e.clientX-state.mouseX);
@@ -449,13 +449,6 @@ function handleMouseLook(e){
   state.mouseX=e.clientX;state.mouseY=e.clientY;
   camera.rotation.y-=clamp(dx,-120,120)*LOOK_RADIANS_PER_PIXEL*aimSensitivity();
   camera.rotation.x=clamp(camera.rotation.x-clamp(dy,-120,120)*LOOK_RADIANS_PER_PIXEL*aimSensitivity(),-1.45,1.45);
-}
-// Embedded browsers may deny mouse capture. Turning at the edges still allows 360° aiming.
-function updateMouseEdgeTurn(dt){
-  if(!isPlaying()||controls.isLocked||!state.mouseOver||state.mouseX===null)return;
-  const edge=Math.min(100,innerWidth*.12),x=clamp(state.mouseX,0,innerWidth);
-  if(x<edge)camera.rotation.y+=(1-x/edge)*EDGE_TURN_RADIANS_PER_SECOND*dt*aimSensitivity();
-  else if(x>innerWidth-edge)camera.rotation.y-=(1-(innerWidth-x)/edge)*EDGE_TURN_RADIANS_PER_SECOND*dt*aimSensitivity();
 }
 function requestMouseCapture(){
   if(isPlaying())focusGame();
