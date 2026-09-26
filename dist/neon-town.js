@@ -3,13 +3,13 @@ import {mergeRigidParts} from './surface-details.js?v=detail-6';
 
 // Original arena geometry: opposing homes, a vehicle choke and two flanking gardens.
 // Rigid surfaces are batched by material. Collision remains simple axis-aligned boxes.
-export function buildNeonTown({world,colliders,shotBlockers,mat}){
+export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
   const solid=new THREE.Group(),decor=new THREE.Group();world.add(solid,decor);
   const palette={white:0xe7edf1,dark:0x25364a,glass:0x245872,orange:0xf17d38,blue:0x29aaca,grass:0x83ab57,road:0x344654};
   const glow=new THREE.MeshBasicMaterial({color:0x67e9ec});
   const block=(x,y,z,w,h,d,color,collision=true,visualOnly=false)=>{
     const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),typeof color==='number'?mat(color,.62):color);mesh.position.set(x,y,z);mesh.castShadow=h>.3;mesh.receiveShadow=true;(visualOnly?decor:solid).add(mesh);
-    if(collision)colliders.push({minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2});return mesh;
+    if(collision)colliders.push({minX:x-w/2,maxX:x+w/2,minY:y-h/2,maxY:y+h/2,minZ:z-d/2,maxZ:z+d/2});return mesh;
   };
   block(0,-.16,0,100,.3,100,palette.grass,false,true);
   block(0,.015,0,32,.035,29,palette.road,false,true);
@@ -21,12 +21,36 @@ export function buildNeonTown({world,colliders,shotBlockers,mat}){
     const side=Math.sign(z),accent=side<0?palette.orange:palette.blue,front=z-side*5;
     // Ground floor is genuinely traversable, with front/rear doors and a side garage opening.
     block(-10,1.8,z,.45,3.6,10,palette.white);block(10,1.8,z,.45,3.6,10,palette.white);
-    for(const wallZ of [front,z+side*5]){block(-6.2,1.8,wallZ,7.6,3.6,.4,palette.white);block(6.2,1.8,wallZ,7.6,3.6,.4,palette.white);block(0,3.3,wallZ,4.8,.6,.4,palette.white,false)}
+    for(const wallZ of [front,z+side*5]){block(-6.2,1.8,wallZ,7.6,3.6,.4,palette.white);block(6.2,1.8,wallZ,7.6,3.6,.4,palette.white);block(0,3.3,wallZ,4.8,.6,.4,palette.white)}
     block(-5,.08,z,9.5,.15,9.5,0xd9e1e4,false,true);block(5,.08,z,9.5,.15,9.5,0xd9e1e4,false,true);
-    block(0,3.8,z,21,.45,11.5,palette.dark,false);block(0,5.4,z+side*1,16,2.9,8,accent,false);
-    block(0,5.55,front-side*.06,12,1.9,.15,palette.glass,false);
-    for(const x of [-5.8,-2.9,0,2.9,5.8])block(x,5.55,front-side*.16,.12,2.05,.12,palette.white,false,true);
-    const roof=block(0,7.05,z,19,.38,10.5,palette.white,false);roof.rotation.z=side*.055;
+    // Second floor: split slab leaves a full-height stairwell on the right.
+    block(-2.2,3.85,z,15.6,.30,10,palette.dark);
+    block(8,3.85,z+side*4.4,4,.30,1.2,palette.dark);
+    block(9.7,3.85,z,.6,.30,10,palette.dark);
+    // Sixteen real treads, tagged for automatic step-up. Their top is the floor height.
+    const stairStart=z-side*3.8,run=7.6;
+    for(let i=0;i<16;i++){const height=(i+1)*.25,stepZ=stairStart+side*(i+.5)*run/16;
+      block(7.6,height/2,stepZ,2.8,height,run/16,palette.white);colliders.at(-1).stair=true;
+      block(7.6,height+.009,stepZ-side*.20,2.75,.018,.055,glow,false,true);
+    }
+    // Open upper room with a broad, unglazed street-facing firing window.
+    block(-10,5.5,z,.45,3,10,accent);block(10,5.5,z,.45,3,10,accent);block(0,5.5,z+side*5,20,3,.4,accent);
+    for(const x of [-6.6,6.6])block(x,5.5,front,6.8,3,.4,accent);
+    block(0,4.4,front,6.4,.8,.4,palette.white);block(0,6.8,front,6.4,.4,.4,palette.white);
+    for(const x of [-3.25,3.25])block(x,5.7,front-side*.05,.12,1.8,.15,glow,false,true);
+    block(0,4.83,front-side*.15,6.7,.10,.6,palette.dark);
+    // Guard the stairwell edge; the rear landing remains open.
+    block(5.85,4.48,z-side*.15,.12,.96,7.1,palette.dark);
+    // Roof has a real 3×3 hatch, with a ladder rising through it.
+    const hatchZ=z+side*2.5;
+    block(-9.5,7.15,z,2,.30,11,palette.white);block(2.5,7.15,z,16,.30,11,palette.white);
+    for(const [a,b] of [[z-5.5,hatchZ-1.5],[hatchZ+1.5,z+5.5]])if(b>a)block(-7,7.15,(a+b)/2,3,.30,b-a,palette.white);
+    for(const x of [-10.35,10.35])block(x,7.6,z,.18,.6,10.8,accent);
+    for(const rz of [z-5.35,z+5.35])block(0,7.6,rz,20.7,.6,.18,accent);
+    const ladderZ=hatchZ;
+    for(const x of [-7.55,-6.45])block(x,6.15,ladderZ+side*.45,.09,4.3,.09,palette.dark,false);
+    for(let i=0;i<12;i++)block(-7,4.25+i*.34,ladderZ+side*.45,1.16,.07,.09,glow,false);
+    ladders.push({x:-7,z:ladderZ,bottom:4,top:7.3,exitX:-4.8,exitZ:ladderZ});
     block(0,3.35,front-side*.26,19,.14,.12,glow,false,true);
     for(const x of [-10.24,10.24])for(const dz of [-2.6,2.6]){block(x,2,z+dz,.06,1.35,2.1,palette.glass,false,true);block(x,1.3,z+dz,.12,.1,2.3,accent,false,true)}
     for(const x of [-6.3,6.3]){block(x,2.1,z+side*5.24,2.5,1.4,.07,palette.glass,false,true);block(x,1.33,z+side*5.3,2.8,.1,.15,accent,false,true)}
@@ -35,7 +59,7 @@ export function buildNeonTown({world,colliders,shotBlockers,mat}){
     block(24,1.35,z,6,2.7,.45,palette.white);block(27,1.35,z+side*3,.4,2.7,6,palette.white);block(24,3,z+side*2,7,.25,7,palette.dark,false);
     block(-24,.65,z,5,1.3,2,accent);block(-24,1.45,z,4.6,.35,1.7,0x3d6741);
     // Geometric roof solar panels and house number placards.
-    for(let i=0;i<4;i++)block(-5+i*3,7.3,z,2.4,.09,4,palette.glass,false,true);
+    for(let i=0;i<3;i++)block(-1+i*3,7.36,z,2.4,.08,3,palette.glass,false,true);
     block(6.6,2.1,front-side*.24,1.5,.75,.08,palette.dark,false,true);
     for(let i=0;i<(side<0?1:2);i++)block(6.3+i*.5,2.1,front-side*.30,.16,.47,.03,glow,false,true);
   }

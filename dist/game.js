@@ -4,7 +4,7 @@ import { detailPlaza } from './plaza.js?v=detail-6';
 import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
-import { buildNeonTown, createPickupMesh } from './neon-town.js?v=16';
+import { buildNeonTown, createPickupMesh } from './neon-town.js?v=vertical-18';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
@@ -25,7 +25,7 @@ const state = {
   mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,map:'neon',arsenal:{},pickups:[],lootNoticeUntil:0,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
-  pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',
+  pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,
   meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0
 };
 
@@ -53,6 +53,7 @@ const weaponDescriptions={ar:'Full auto / medium range',shotgun:'Heavy / close r
 // Shared sensitivity keeps captured and embedded-browser mouse look consistent.
 const LOOK_RADIANS_PER_PIXEL=.00656;
 const colliders=[];
+const ladders=[];
 const shotBlockers=[];
 const materials=new Map();
 const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]]},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]]}};
@@ -66,8 +67,8 @@ function setMap(id){
   if(!Object.hasOwn(MAPS,id))id='neon';state.map=id;$('map-select').value=id;$('map-title').textContent=MAPS[id].name;$('map-description').textContent=MAPS[id].description;
   if(!world||builtMap===id)return;
   for(const burst of coffeeBursts)burst.mesh.dispose();if(tracerMesh){tracerMesh.dispose();tracerMesh.geometry.dispose();tracerMesh.material.dispose()}
-  world.clear();playerMeshes.clear();hitModels.clear();pickupMeshes.clear();coffeeBursts.length=0;tracerMesh=null;tracerSlots.forEach(s=>s.born=-Infinity);colliders.length=shotBlockers.length=0;
-  if(mapCache.has(id)){const saved=mapCache.get(id);world.add(...saved.children);colliders.push(...saved.colliders);shotBlockers.push(...saved.blockers)}else{if(id==='neon')buildNeonTown({world,colliders,shotBlockers,mat});else makePlaza();mapCache.set(id,{children:[...world.children],colliders:[...colliders],blockers:[...shotBlockers]})}
+  world.clear();playerMeshes.clear();hitModels.clear();pickupMeshes.clear();coffeeBursts.length=0;tracerMesh=null;tracerSlots.forEach(s=>s.born=-Infinity);colliders.length=shotBlockers.length=ladders.length=0;state.climbing=null;
+  if(mapCache.has(id)){const saved=mapCache.get(id);world.add(...saved.children);colliders.push(...saved.colliders);shotBlockers.push(...saved.blockers);ladders.push(...saved.ladders)}else{if(id==='neon')buildNeonTown({world,colliders,shotBlockers,mat,ladders});else makePlaza();mapCache.set(id,{children:[...world.children],colliders:[...colliders],blockers:[...shotBlockers],ladders:[...ladders]})}
   builtMap=id;
   scene.background.set(id==='neon'?0x96cfeb:0x82c9e8);scene.fog.color.copy(scene.background);
   const cached=mapCache.get(id);cached.pickups??=MAPS[id].pickups.map(([kind,x,z])=>{const mesh=createPickupMesh(kind);mesh.position.set(x,0,z);return mesh});cached.pickups.forEach((mesh,i)=>{world.add(mesh);pickupMeshes.set(i,mesh)});
@@ -246,7 +247,7 @@ function acceptConnection(c){
 function wireClient(c){c.on('open',()=>setError(''));c.on('data',d=>handleClientMessage(d));c.on('close',()=>leaveToHome('The host closed the room.'));c.on('error',peerError)}
 function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
-  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,3.5);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun'}
+  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,14);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun'}
   if(d.t==='shot')resolveShot(from);
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
   if(d.t==='melee')resolveMelee(from);
@@ -292,6 +293,7 @@ function startMatch(){
   if(!state.host)return;state.matchEnd=Date.now()+180000;state.arsenal={};Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...spawnFor(i)}));resetPickups();broadcast({t:'start',end:state.matchEnd,players:state.players,map:state.map,pickups:state.pickups});beginMatch(true)
 }
 function beginMatch(asHost){
+  state.climbing=null;
   state.arsenal={...state.players[state.id]?.arsenal};if(Object.hasOwn(WEAPONS,state.players[state.id]?.weapon))state.selectedWeapon=state.players[state.id].weapon;state.lootNoticeUntil=0;
   state.velocityX=state.velocityZ=state.hopChain=0;state.pendingWeapon=state.selectedWeapon;
   state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped='gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
@@ -507,6 +509,7 @@ function updateWeaponMotion(dt,now){
 
 function updateMovement(dt){
   if(!isPlaying())return;
+  updateLadderHint();if(state.climbing!==null){updateClimbing(dt);return}
   const forwardInput=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),sideInput=(state.keys.KeyD?1:0)-(state.keys.KeyA?1:0),forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();
   const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(),wish=forward.multiplyScalar(forwardInput).addScaledVector(right,sideInput),moving=wish.lengthSq()>0;wish.normalize();
   const previousSpeed=Math.hypot(state.velocityX,state.velocityZ);
@@ -520,22 +523,49 @@ function updateMovement(dt){
     const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.001){state.velocityX*=speed/length;state.velocityZ*=speed/length}
   }else{state.velocityX*=Math.exp(-.6*dt);state.velocityZ*=Math.exp(-.6*dt)}
   moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
-  state.velocityY-=22*dt;camera.position.y+=state.velocityY*dt;if(camera.position.y<=1.7){camera.position.y=1.7;state.velocityY=0;state.onGround=true}
+  updateVerticalMovement(dt);
 }
 function moveSweptAxis(axis,delta){
   // Check the entire path, not just the endpoint: uncapped speed cannot skip thin cover.
-  // One pass over the fixed collider list, regardless of speed (no unbounded substeps).
+  // Ordered contacts allow a staircase to be climbed even during a fast frame.
   if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=axis==='x'?34:35;
   const requested=old+delta;let next=clamp(requested,-bound,bound);
-  for(const c of colliders){
-    if(side<=c['min'+cross]-.55||side>=c['max'+cross]+.55)continue;
-    const near=c['min'+suffix]-.55,far=c['max'+suffix]+.55;
-    if(delta>0&&old<=near&&next>near)next=Math.min(next,near-.00001);
-    else if(delta<0&&old>=far&&next<far)next=Math.max(next,far+.00001);
+  const radius=c=>c.stair?0:.55;
+  const contacts=colliders.filter(c=>side>c['min'+cross]-radius(c)&&side<c['max'+cross]+radius(c)).sort((a,b)=>delta>0?(a['min'+suffix]-radius(a))-(b['min'+suffix]-radius(b)):(b['max'+suffix]+radius(b))-(a['max'+suffix]+radius(a)));
+  for(const c of contacts){
+    const near=c['min'+suffix]-radius(c),far=c['max'+suffix]+radius(c);
+    const crossing=delta>0?old<=near&&next>near:old>=far&&next<far;if(!crossing)continue;
+    const foot=camera.position.y-1.7;if(!verticalOverlap(c,foot))continue;
+    const contact=(delta>0?near:far)+Math.sign(delta)*.0001,x=axis==='x'?contact:side,z=axis==='z'?contact:side;
+    if(state.onGround&&Number.isFinite(c.maxY)&&c.maxY-foot<=.31&&!collides(x,z,c.maxY+.001)){camera.position.y=c.maxY+1.7;continue}
+    if(delta>0)next=Math.min(next,near-.00001);else next=Math.max(next,far+.00001);
   }
   camera.position[axis]=next;if(next!==requested){state[axis==='x'?'velocityX':'velocityZ']=0;state.hopChain=0}
 }
-function collides(x,z){return colliders.some(c=>x>c.minX-.55&&x<c.maxX+.55&&z>c.minZ-.55&&z<c.maxZ+.55)}
+function verticalOverlap(c,foot){return foot<(c.maxY??Infinity)-.001&&foot+1.9>(c.minY??-Infinity)+.001}
+function collides(x,z,foot=0){return colliders.some(c=>{const r=c.stair?0:.55;return verticalOverlap(c,foot)&&x>c.minX-r&&x<c.maxX+r&&z>c.minZ-r&&z<c.maxZ+r})}
+function updateVerticalMovement(dt){
+  const old=camera.position.y-1.7;state.velocityY-=22*dt;let next=old+state.velocityY*dt,ground=0;
+  for(const c of colliders){
+    const margin=c.stair?0:.20;
+    if(!Number.isFinite(c.maxY)||camera.position.x<c.minX-margin||camera.position.x>c.maxX+margin||camera.position.z<c.minZ-margin||camera.position.z>c.maxZ+margin)continue;
+    if(state.velocityY<=0&&old>=c.maxY-.04&&next<=c.maxY)ground=Math.max(ground,c.maxY);
+    if(state.velocityY>0&&old+1.9<=c.minY+.001&&next+1.9>=c.minY){next=c.minY-1.9;state.velocityY=0}
+  }
+  state.onGround=next<=ground;if(state.onGround){next=ground;state.velocityY=0}camera.position.y=next+1.7;
+}
+function nearbyLadder(){const foot=camera.position.y-1.7;return ladders.findIndex(l=>Math.hypot(camera.position.x-l.x,camera.position.z-l.z)<1.85&&foot>=l.bottom-.3&&foot<=l.top+.35)}
+function updateLadderHint(){const near=nearbyLadder();$('ladder-hint').textContent=state.climbing!==null?'W / S · CLIMB   SPACE / E · LET GO':near>=0?'E · GRAB ROOFTOP LADDER':''}
+function toggleLadder(){
+  if(!isPlaying())return;if(state.climbing!==null){state.climbing=null;state.onGround=false;return}
+  const index=nearbyLadder();if(index<0)return;const l=ladders[index];state.climbing=index;state.velocityX=state.velocityY=state.velocityZ=state.hopChain=0;state.onGround=false;camera.position.x=l.x;camera.position.z=l.z;
+}
+function updateClimbing(dt){
+  const l=ladders[state.climbing];if(!l){state.climbing=null;return}
+  if(state.keys.Space){state.climbing=null;state.velocityY=5;return}
+  const direction=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),foot=clamp(camera.position.y-1.7+direction*3.6*dt,l.bottom,l.top);camera.position.set(l.x,foot+1.7,l.z);
+  if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0}
+}
 function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
 function updateBots(dt){if(!state.practice||!state.matchActive)return;Object.values(state.players).filter(p=>p.bot&&p.alive).forEach((p,i)=>{const a=performance.now()/2300+i*2.1,nextX=clamp(p.x+Math.sin(a)*dt*2.3,-31,31),nextZ=clamp(p.z+Math.cos(a*1.2)*dt*2.3,-31,31);if(!collides(nextX,p.z))p.x=nextX;if(!collides(p.x,nextZ))p.z=nextZ;p.yaw=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);if(Math.random()<dt*.28){const d=Math.hypot(camera.position.x-p.x,camera.position.z-p.z);if(d<35&&state.alive&&hasClearShot(new THREE.Vector3(p.x,1.7,p.z),camera.position))applyHit(p.id,state.id,10)}})}
 function updateNetwork(now){if(now-state.lastNet<65)return;state.lastNet=now;if(state.host)hostSnapshot();else publishCombatPose()}
@@ -552,7 +582,7 @@ function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){state.keys={};state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
+function clearInput(){state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto'}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='SHIFT AIM · F EQUIP BAT · HOLD SPACE + MOVE TO BHOP · ESC MENU';$('control-hint').classList.remove('hidden')}
@@ -575,7 +605,7 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyR')reload();if(e.code==='KeyE'&&!e.repeat)toggleLadder();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0)state.fireHeld=false;if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
