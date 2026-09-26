@@ -7,7 +7,7 @@
   <title>Rot Royale</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=weapons-12">
+  <link rel="stylesheet" href="./styles.css?v=tracers-15">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
@@ -68,7 +68,7 @@
         </aside>
         <aside class="rules-strip" aria-label="How to play">
           <strong>CONTROLS</strong>
-          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd>SHIFT</kbd> toggle aim</span><span><kbd>F</kbd> gun / bat</span><span><kbd>R</kbd> reload</span><span><kbd>HOLD SPACE</kbd> jump</span><span><kbd>ESC</kbd> menu</span>
+          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd>SHIFT</kbd> toggle aim</span><span><kbd>F</kbd> gun / bat</span><span><kbd>R</kbd> reload</span><span><kbd>HOLD SPACE</kbd> bhop while moving</span><span><kbd>1–4 WHEN DEAD</kbd> loadout</span><span><kbd>ESC</kbd> menu</span>
         </aside>
       </div>
     </section>
@@ -122,11 +122,11 @@
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="headshot-callout" class="headshot-callout">HEADSHOT <small>2× DAMAGE</small></div>
       <div id="damage-flash"></div>
-      <div id="respawn" class="respawn"><strong>Cooling the espresso…</strong><span id="respawn-time">3</span></div>
+      <div id="respawn" class="respawn"><div class="respawn-card"><strong>Cooling the espresso…</strong><span id="respawn-time">3</span><p>Switch it up? Click a weapon or press 1–4.</p><div id="respawn-weapons" class="respawn-weapons" aria-label="Next-spawn loadout"></div><p id="respawn-loadout-note" aria-live="polite"></p><small>Respawning automatically · keep playing, no extra menu</small></div></div>
     </section>
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=mouse-look-14"></script>
+  <script type="module" src="./game.js?v=tracers-15"></script>
 </body>
 </html>
