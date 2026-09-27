@@ -44,12 +44,48 @@ const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();l
 const BUILD_LIFETIME=30000;
 let audioContext,soundMuted=false,eliminationUntil=0,landingKick=0,shotShake=0,slideView=0,targetCheckAt=0,damageSerial=0;
 const remoteShotTimes=new Map();
-function unlockAudio(){try{const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return;audioContext??=new Audio();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{})}catch{}}
+let audioMaster,audioLimiter,reloadSoundStage=0;
+const soundBuffers=new Map(),soundVoices=new Set();
+function unlockAudio(){try{const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return;if(!audioContext){audioContext=new Audio();audioMaster=audioContext.createGain();audioMaster.gain.value=.65;audioLimiter=audioContext.createDynamicsCompressor();audioLimiter.threshold.value=-10;audioLimiter.knee.value=8;audioLimiter.ratio.value=8;audioLimiter.attack.value=.003;audioLimiter.release.value=.12;audioMaster.connect(audioLimiter);audioLimiter.connect(audioContext.destination);for(const type of ['ar','smg','shotgun','sniper','magout','magin','bolt'])for(let variant=0;variant<3;variant++)makeSoundBuffer(type,variant)}if(audioContext.state==='suspended')audioContext.resume().catch(()=>{})}catch{}}
+// Original procedural recordings: cached once, never synthesized in the render loop.
+function makeSoundBuffer(type,variant=0){
+  const key=type+variant;if(soundBuffers.has(key))return soundBuffers.get(key);
+  const profiles={ar:[.48,135,.058,.15],smg:[.32,185,.035,.09],shotgun:[.85,78,.12,.26],sniper:[1.05,105,.095,.34]},p=profiles[type],duration=p?p[0]:.18,sr=audioContext.sampleRate,buffer=audioContext.createBuffer(1,Math.ceil(sr*duration),sr),data=buffer.getChannelData(0);
+  let seed=7919+variant*1777+type.charCodeAt(0)*101,low=0,air=0,previous=0,phase=0,peak=0;
+  const noise=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/2147483648-1};
+  for(let i=0;i<data.length;i++){
+    const t=i/sr,n=noise();low+=.035*(n-low);air+=.3*(n-air);const high=n-air;let sample;
+    if(p){
+      phase+=2*Math.PI*(p[1]*(1+.65*Math.exp(-t*75)))/sr;
+      const crack=(high*.85+n*.35)*Math.exp(-t/(type==='shotgun'?.032:.012));
+      const blast=(low*4.8+Math.sin(phase)*.26)*Math.exp(-t/p[2]);
+      const tail=(air*.28+low*.8)*Math.exp(-t/p[3])*(1-Math.exp(-t*90));
+      const actionTime=type==='shotgun'?.32:type==='sniper'?.42:.035,at=t-actionTime;
+      const action=at>0?(high*.15+Math.sin(at*6200)*.045)*Math.exp(-at/.019):0;
+      const echoAt=t-.085,echo=echoAt>0?low*.4*Math.exp(-echoAt/(p[3]*.8)):0;
+      sample=(crack+blast+tail+action+echo)*Math.min(1,t/.0007);
+    }else{
+      const heavy=type==='magin',bolt=type==='bolt',second=t-(bolt?.047:.029);
+      sample=(high*.5+low*(heavy?4:1.5)+Math.sin(t*(heavy?1900:3400))*.13)*Math.exp(-t/(bolt?.022:.012));
+      if(second>0)sample+=(n*.4+Math.sin(second*5100)*.16)*Math.exp(-second/.016);
+      sample*=Math.min(1,t/.0005);
+    }
+    // DC rejection and short release avoid clicks, including when buffers overlap.
+    const dc=sample-previous+.995*(i?data[i-1]:0);previous=sample;data[i]=dc*Math.min(1,(duration-t)/.015);peak=Math.max(peak,Math.abs(data[i]));
+  }
+  for(let i=0;i<data.length;i++)data[i]*=.85/Math.max(.01,peak);
+  soundBuffers.set(key,buffer);return buffer;
+}
+function playSoundBuffer(type,volume=1,pan=0,distance=0,rate=1){
+  if(soundMuted||!audioContext||audioContext.state!=='running')return;
+  if(soundVoices.size>=24){const oldest=soundVoices.values().next().value;oldest.stop();soundVoices.delete(oldest)}
+  const source=audioContext.createBufferSource(),gain=audioContext.createGain(),filter=audioContext.createBiquadFilter(),stereo=audioContext.createStereoPanner();source.buffer=makeSoundBuffer(type,Math.floor(Math.random()*3));source.playbackRate.value=rate*(.97+Math.random()*.06);gain.gain.value=volume;filter.type='lowpass';filter.frequency.value=Math.max(1400,18000/(1+distance*.13));stereo.pan.value=Math.max(-1,Math.min(1,pan));source.connect(filter);filter.connect(gain);gain.connect(stereo);stereo.connect(audioMaster);soundVoices.add(source);source.onended=()=>{soundVoices.delete(source);source.disconnect();filter.disconnect();gain.disconnect();stereo.disconnect()};source.start();
+}
 function tone(frequency,duration=.06,gain=.04,type='sine',delay=0,end=frequency){
   if(soundMuted||!audioContext||audioContext.state!=='running')return;
-  const start=audioContext.currentTime+delay,osc=audioContext.createOscillator(),volume=audioContext.createGain();osc.type=type;osc.frequency.setValueAtTime(frequency,start);osc.frequency.exponentialRampToValueAtTime(Math.max(20,end),start+duration);volume.gain.setValueAtTime(.001,start);volume.gain.linearRampToValueAtTime(gain,start+.004);volume.gain.exponentialRampToValueAtTime(.001,start+duration);osc.connect(volume);volume.connect(audioContext.destination);osc.start(start);osc.stop(start+duration+.01);osc.onended=()=>{osc.disconnect();volume.disconnect()};
+  const start=audioContext.currentTime+delay,osc=audioContext.createOscillator(),volume=audioContext.createGain();osc.type=type;osc.frequency.setValueAtTime(frequency,start);osc.frequency.exponentialRampToValueAtTime(Math.max(20,end),start+duration);volume.gain.setValueAtTime(.001,start);volume.gain.linearRampToValueAtTime(gain,start+.004);volume.gain.exponentialRampToValueAtTime(.001,start+duration);osc.connect(volume);volume.connect(audioMaster||audioContext.destination);osc.start(start);osc.stop(start+duration+.01);osc.onended=()=>{osc.disconnect();volume.disconnect()};
 }
-function weaponSound(type,tier=0,volume=1){const f={ar:180,smg:250,shotgun:90,sniper:470}[type]||180;tone(f,.10,.035*volume,'triangle',0,45);tone(f*3,.035,.012*volume,'square',0,f);if(tier)tone(700+tier*180,.14,.016*volume,'sine',0,180)}
+function weaponSound(type,tier=0,volume=1,pan=0,distance=0){playSoundBuffer(type,volume*({ar:.58,smg:.43,shotgun:.78,sniper:.8}[type]||.5),pan,distance,tier?.96:1)}
 function damageFeedback(d){
   if(!state.matchActive)return;const root=$('damage-numbers'),item=document.createElement('span');item.className='damage-number'+(d.headshot?' headshot':'')+(d.killed?' kill':'');item.textContent=String(Math.round(d.amount));item.style.marginLeft=`${((damageSerial++%3)-1)*28}px`;root.prepend(item);while(root.children?.length>8)root.lastElementChild.remove();setTimeout(()=>item.remove?.(),720);
   tone(d.headshot?1250:760,.055,.035,'sine');if(d.headshot)tone(1680,.065,.025,'sine',.045);
@@ -460,7 +496,7 @@ function showTracers(message){
   const muzzle=weaponModel?.userData.rig?.userData.gun?.userData.muzzle;
   if(message.id===state.id&&muzzle){camera.updateMatrixWorld(true);muzzle.getWorldPosition(start)}
   for(const end of message.ends.slice(0,12)){if(!valid(end))continue;const slot=tracerSlots[tracerCursor++%tracerSlots.length];slot.start.copy(start);slot.end.fromArray(end);slot.born=performance.now();slot.life=message.weapon==='sniper'?300:110;slot.width=message.weapon==='sniper'?.03:.014;tracerMesh.setColorAt((tracerCursor-1)%tracerSlots.length,new THREE.Color(message.tier?RARITIES[message.tier]?.color||0x66ddff:message.weapon==='sniper'?0x8deaff:0xffd575))}
-  if(tracerMesh.instanceColor)tracerMesh.instanceColor.needsUpdate=true;remoteShotTimes.set(message.id,performance.now());if(message.id!==state.id){const distance=camera.position.distanceTo(start);if(distance<45)weaponSound(message.weapon,message.tier,Math.max(.05,1-distance/45)*.4)}for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});tracerMesh.visible=true;updateTracers(performance.now());
+  if(tracerMesh.instanceColor)tracerMesh.instanceColor.needsUpdate=true;remoteShotTimes.set(message.id,performance.now());if(message.id!==state.id){const offset=start.clone().sub(camera.position),distance=offset.length(),right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),pan=distance?offset.dot(right)/distance:0;if(distance<85)weaponSound(message.weapon,message.tier,.65/(1+distance*.07),pan,distance)}for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});tracerMesh.visible=true;updateTracers(performance.now());
 }
 function updateTracers(now){
   if(!tracerMesh?.visible)return;let active=false;
@@ -523,7 +559,7 @@ function toggleBat(){
   if(!isPlaying()||performance.now()-state.meleeStart<MELEE.duration)return;
   state.equipped=state.equipped==='bat'?'gun':'bat';state.fireHeld=false;state.reloading=false;resetAim();weaponMotion.kick=0;publishCombatPose();updateWeaponModel();updateCombatVisuals(performance.now());updateHud();
 }
-function reload(){const w=WEAPONS[state.selectedWeapon];if(!isPlaying()||state.equipped==='bat'||performance.now()-state.meleeStart<MELEE.duration||state.reloading||state.ammo>=w.mag)return;state.reloading=true;state.reloadStart=performance.now();tone(240,.06,.015,'square');publishCombatPose();$('weapon-name').textContent='RELOADING…'}
+function reload(){const w=WEAPONS[state.selectedWeapon];if(!isPlaying()||state.equipped==='bat'||performance.now()-state.meleeStart<MELEE.duration||state.reloading||state.ammo>=w.mag)return;state.reloading=true;state.reloadStart=performance.now();reloadSoundStage=0;playSoundBuffer('magout',.22);publishCombatPose();$('weapon-name').textContent='RELOADING…'}
 function smoothStep(t){t=THREE.MathUtils.clamp(t,0,1);return t*t*(3-2*t)}
 function updateAim(dt){
   const profile=AIM_PROFILES[state.selectedWeapon],target=state.aiming&&state.equipped!=='bat'&&isPlaying()&&!state.reloading&&performance.now()-state.meleeStart>=MELEE.duration;
@@ -557,6 +593,7 @@ function updateWeaponMotion(dt,now){
   m.swayX=THREE.MathUtils.lerp(m.swayX,clamp(dy*.18/Math.max(dt,.001),-.05,.05),blend);m.swayY=THREE.MathUtils.lerp(m.swayY,clamp(dp*.12/Math.max(dt,.001),-.035,.035),blend);
   m.kick*=Math.exp(-profile.settle*dt);
   const t=state.reloading?(now-state.reloadStart)/w.reload:0,tilt=state.reloading?smoothStep(t/.22)*(1-smoothStep((t-.76)/.24)):0;
+  if(state.reloading){if(t>=.24&&reloadSoundStage<1){playSoundBuffer('magout',.3);reloadSoundStage=1}if(t>=.58&&reloadSoundStage<2){playSoundBuffer('magin',.4);reloadSoundStage=2}if(t>=.83&&reloadSoundStage<3){playSoundBuffer('bolt',.32);reloadSoundStage=3}}
   const breath=Math.sin(now*.002)*.0025,bob=Math.sin(m.phase),mag=state.reloading?smoothStep((t-.20)/.16)*(1-smoothStep((t-.57)/.17)):0;
   // Both hands travel with the gun into its real sight line; aiming never rotates the camera.
   const free=1-aim,sight=rig.userData.gun.userData.sight.position;
@@ -813,7 +850,7 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(!controls.isLocked)requestMouseCapture();if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('capture-mouse').onclick=requestMouseCapture;
