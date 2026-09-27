@@ -37,8 +37,8 @@
         </aside>
 
         <section class="center-lobby" aria-label="Fighter preview and play">
-          <div class="match-badge">Free-for-all <span>3-minute rounds</span></div>
-          <p class="match-summary">Most eliminations wins. Respawn and keep playing.</p>
+          <div class="match-badge" id="match-badge">Free-for-all <span>3-minute rounds</span></div>
+          <p class="match-summary" id="match-summary">Most eliminations wins. Respawn and keep playing.</p>
           <div id="fighter-stage" class="fighter-stage" role="img" aria-label="3D preview of Wooden Bonker"></div>
           <div class="fighter-caption"><h2 id="fighter-name">Wooden Bonker</h2><span id="loadout-caption">Espresso AR · Balanced / medium range</span></div>
           <section class="loadout-panel" aria-label="Weapon presets">
@@ -48,7 +48,7 @@
             <button id="create-room" class="primary"><span>Play with friends</span><small>Create a private room</small></button>
             <button id="practice" class="practice-button"><span>Practice</span><small>Play against bots</small></button>
           </div>
-          <div class="room-panel">
+          <div class="room-panel" id="room-panel">
             <label for="room-code-input">Have a room code?</label>
             <div class="join-row">
               <input id="room-code-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off" aria-label="Room code">
@@ -62,7 +62,7 @@
           <div class="map-kicker">Arena</div>
           <h2 id="map-title">NEON TOWN</h2>
           <p id="map-description" class="map-location">Two-floor houses · rooftop ladders · vehicle choke</p>
-          <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town</option><option value="piazza">Piazza Panic</option></select>
+          <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town</option><option value="piazza">Piazza Panic</option><option value="surf">Surf Circuit</option></select>
           <div class="rule-heading">How to win</div>
           <p>Most eliminations in 3 minutes wins.</p>
           <details class="match-rules"><summary>Rules & controls</summary><ul><li>Unlimited respawns · 3 seconds</li><li>Ctrl slides while moving · Space jumps out</li><li>M toggles sound</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li><li>Stairs inside each Neon Town house</li><li>E dances · near ladders, E grabs them</li><li>B builds · T switches wall/ramp/floor · R rotates</li><li>Click to snap & stack · Unlimited builds · lasts 30s</li></ul></details>
@@ -71,7 +71,7 @@
         </aside>
         <aside class="rules-strip" aria-label="How to play">
           <strong>CONTROLS</strong>
-          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd>SHIFT</kbd> toggle aim</span><span><kbd>F</kbd> gun / bat</span><span><kbd>R</kbd> reload</span><span><kbd>CTRL</kbd> slide</span><span><kbd>M</kbd> sound</span><span><kbd>HOLD SPACE</kbd> bhop while moving</span><span><kbd>1–4 WHEN DEAD</kbd> loadout</span><span><kbd>ESC</kbd> menu</span>
+          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd>SHIFT</kbd> toggle aim</span><span><kbd>F</kbd> gun / bat</span><span><kbd>R</kbd> reload</span><span><kbd>I</kbd> inspect</span><span><kbd>CTRL</kbd> slide</span><span><kbd>M</kbd> sound</span><span><kbd>HOLD SPACE</kbd> bhop while moving</span><span><kbd>1–4 WHEN DEAD</kbd> loadout</span><span><kbd>ESC</kbd> menu</span>
         </aside>
       </div>
     </section>
@@ -126,7 +126,7 @@
       <div id="emote-hint" class="emote-hint"></div><div id="build-hint" class="build-hint"></div>
       <div class="hud-bottom">
         <div class="health-wrap"><span id="health-number">100</span><div class="health-track"><div id="health-bar"></div></div><small>ESPRESSO</small></div>
-        <div class="weapon-hud"><small id="weapon-rarity">STANDARD</small><small id="weapon-name">AR</small><strong id="ammo-readout"><span id="ammo">30</span><em>/</em><span id="reserve">∞</span></strong><small id="aim-status">SHIFT / RMB · AIM</small><small id="melee-status">F · EQUIP BAT</small></div>
+        <div class="weapon-hud"><small id="weapon-rarity">STANDARD</small><small id="weapon-name">AR</small><strong id="ammo-readout"><span id="ammo">30</span><em>/</em><span id="reserve">∞</span></strong><small id="aim-status">SHIFT / RMB · AIM · I INSPECT</small><small id="melee-status">F · EQUIP BAT</small></div>
       </div>
       <div id="hitmarker" class="hitmarker">×</div>
       <div id="headshot-callout" class="headshot-callout">HEADSHOT <small>2× DAMAGE</small></div>
