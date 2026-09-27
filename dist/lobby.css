@@ -1,0 +1,56 @@
+/* Calm, character-first lobby. The original logotype is intentionally untouched. */
+#home{background:#a7d5ed;color:#193d53;font-family:'DM Sans',system-ui,sans-serif;padding:36px 40px 0}
+#home .home-shell{max-width:1320px;min-height:calc(100dvh - 36px);grid-template-columns:210px minmax(350px,1fr) 230px;gap:40px}
+#home h2,#home button,#home input,#home select{font-family:'DM Sans',system-ui,sans-serif}
+#home h2{text-transform:none;letter-spacing:-.025em;line-height:1.2}
+#home .identity-panel{gap:28px}
+#home .brand-block{margin:0 0 14px}
+#home .lobby-panel{padding:0;background:none;border:0;box-shadow:none;border-radius:0}
+#home .desktop-note{display:none}
+#home .field-label,#home .panel-title{font-size:14px;font-weight:600;color:#34576c}
+#home input,#home #map-select{background:#ffffff70;border:1px solid #648fa980;border-radius:6px;color:#193d53;padding:11px 12px;font-size:16px;font-weight:500;box-shadow:none}
+#home input:focus,#home #map-select:focus{outline:2px solid #245b7f;outline-offset:2px}
+#home .choice-grid{gap:8px}
+#home .character{border:1px solid transparent;background:#ffffff26;border-radius:7px;box-shadow:none;padding:8px 3px}
+#home .character.selected{background:#ffffffa6;border-color:#426f88;box-shadow:none}
+#home .character small{font-size:14px;font-weight:500;line-height:1.25;min-height:35px}
+#home .character .avatar img{background:transparent;border-radius:4px}
+#home .match-badge{background:none;border:0;padding:0;font-size:14px;letter-spacing:0;font-weight:600;gap:12px}
+#home .match-badge span{font-size:14px;font-weight:400;letter-spacing:0;border-color:#749eb5;padding-left:12px}
+#home .match-summary{color:#456a80;font-size:14px;font-weight:400;margin-top:8px}
+#home .fighter-stage{height:clamp(250px,43vh,450px);min-height:250px}
+#home .fighter-caption h2{font-size:25px;font-weight:700;color:#193d53}
+#home .fighter-caption>span{color:#456a80;font-size:14px;font-weight:400}
+#home .loadout-panel{max-width:500px;margin:20px 0}
+#home .weapon-list{gap:8px}
+#home .weapon{min-height:52px;background:#ffffff26;border:1px solid #648fa960;color:#31556b;border-radius:6px;box-shadow:none;gap:0}
+#home .weapon-icon{display:none}
+#home .weapon strong{font-size:14px;font-weight:600;letter-spacing:0}
+#home .weapon.selected{background:#193d53;border-color:#193d53;color:white;box-shadow:none}
+#home .play-actions{max-width:500px;gap:10px}
+#home .play-actions button,#home .play-actions #create-room{min-height:64px;background:#f8c45b;color:#263a43;border:1px solid #d6a345;box-shadow:none;text-shadow:none;text-transform:none;font-size:17px;font-weight:700;padding:12px;border-radius:6px;transform:none}
+#home .play-actions #practice{background:#ffffff40;border-color:#648fa980;color:#193d53}
+#home .play-actions button small{font:400 13px 'DM Sans',sans-serif;letter-spacing:0}
+#home button:hover{filter:none;background-color:#ffffff90}
+#home .play-actions #create-room:hover{background:#ffd47c}
+#home button:focus-visible{outline:2px solid #193d53;outline-offset:3px}
+#home .room-panel{max-width:500px;margin-top:20px;gap:10px}
+#home .room-panel label{font-size:14px;font-weight:400}
+#home .join-row input{font-size:14px}
+#home .join-row button{border:1px solid #648fa980;background:#ffffff40;text-transform:none;font-size:14px;font-weight:600}
+#home .match-info{margin-top:4px;overflow:visible}
+#home .map-kicker{background:none;padding:0;color:#34576c;font-size:14px;letter-spacing:0;font-weight:500}
+#home .match-info h2{font-size:28px;padding:8px 0 0;color:#193d53;text-shadow:none}
+#home .map-location{margin:8px 0 24px;font-size:14px;line-height:1.5;color:#456a80}
+#home .rule-heading{border-top:1px solid #648fa950;padding:22px 0 0;margin-top:14px;font-size:15px;font-weight:600}
+#home .match-info p:not(.map-location){margin:8px 0 20px;font-size:15px;font-weight:400;line-height:1.5}
+#home .match-rules,#home .loot-rules{border-top:1px solid #648fa950;padding:15px 0;margin:0;font-size:14px}
+#home summary{cursor:pointer;font-size:14px;font-weight:600}
+#home .match-info ul{padding:0 0 0 18px;margin:14px 0 0;font-size:14px;line-height:1.7}
+#home .room-tip{background:none;border-top:1px solid #648fa950;padding:18px 0;font-size:14px;color:#456a80}
+#home .rules-strip{border-top:1px solid #648fa950;padding:18px 0;margin-top:8px;gap:12px 18px;font-size:13px;color:#34576c}
+#home .rules-strip strong{font:600 13px 'DM Sans',sans-serif;letter-spacing:0}
+#home kbd{background:#ffffff40;border:1px solid #648fa940;box-shadow:none;color:#193d53;font:500 12px 'DM Sans',sans-serif}
+@media(max-width:1100px){#home{padding:24px}#home .home-shell{grid-template-columns:180px minmax(320px,1fr);gap:28px}#home .match-info{display:block;grid-column:1/-1;max-width:none;border-top:1px solid #648fa950;padding-top:20px}#home .fighter-stage{height:38vh}#home .rules-strip{grid-column:1/-1}}
+@media(max-width:650px){#home{padding:24px 18px}#home .home-shell{display:flex;flex-direction:column;gap:28px}#home .identity-panel{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:20px}#home .brand-block{margin:0}#home .fighter-picker{grid-column:1/-1}#home .choice-grid{grid-template-columns:repeat(4,minmax(0,1fr))}#home .character small{font-size:12px}#home .center-lobby,#home .match-info{width:100%}#home .fighter-stage{height:320px}#home .room-panel{flex-wrap:wrap}#home .room-panel label{width:100%}#home .rules-strip{display:flex}}
+#home .play-actions button{font-family:'DM Sans',system-ui,sans-serif}
