@@ -131,7 +131,7 @@ let lobbyRenderer,lobbyScene,lobbyCamera,lobbyFighter;
 const lobbyFighters=new Map();
 const lobbyLook={x:0,y:0};
 function trackLobbyPointer(e){if(state.mode!=='home'||e.pointerType==='touch')return;const rect=$('fighter-stage').getBoundingClientRect();lobbyLook.x=clamp((e.clientX-rect.left-rect.width/2)/Math.max(200,innerWidth*.4),-1,1);lobbyLook.y=clamp((e.clientY-rect.top-rect.height*.4)/Math.max(160,innerHeight*.4),-1,1)}
-function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt);lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso)torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12,blend);lobbyFighter.position.y=0}
+function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt),now=performance.now(),breath=Math.sin(now*.0022)*.006;lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);lobbyFighter.position.y=THREE.MathUtils.lerp(lobbyFighter.position.y,breath,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso){torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12+Math.sin(now*.0016)*.008,blend);torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,lobbyLook.x*.06,blend)}const gun=lobbyFighter.userData.gun;if(gun){gun.position.y=THREE.MathUtils.lerp(gun.position.y,breath*.8,blend);gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,Math.sin(now*.0018)*.006,blend)}}
 
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
 const weaponDescriptions={ar:'Steady full auto / medium range',shotgun:'10-pellet blast / close range',sniper:'Scope for precision / rail trail',smg:'Fast hip fire / +14% movement'};
@@ -293,7 +293,8 @@ if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduc
   if(register){const tag=document.createElement('div');tag.className='name-tag';g.userData.tag=tag;world.add(g);playerMeshes.set(p.id,g)}return g;
 }
 function syncMeshes(dt=1/60){
-  const now=performance.now(),blend=1-Math.exp(-16*dt);
+  const now=performance.now(),blend=1-Math.exp(-13*dt),poseBlend=1-Math.exp(-18*dt);
+  const damp=(value,target,rate=18)=>THREE.MathUtils.lerp(value,target,1-Math.exp(-rate*dt));
   Object.values(state.players).forEach(p=>{
     if(p.id===state.id)return;const m=playerMeshes.get(p.id)||createPlayerMesh(p),u=m.userData,reaction=p.alive!==false&&hitReactions.get(p.id)?.killed?null:hitReactions.get(p.id),deathAge=reaction?.killed?now-reaction.time:Infinity;m.visible=p.alive!==false||deathAge<650;
     const tier=weaponTier(p.weapon,p.arsenal||{});if(WEAPONS[p.weapon]&&(u.weaponType!==p.weapon||u.weaponTier!==tier)){m.remove(u.gun);u.gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon].color,p.weapon,false,tier);u.gun.traverse(part=>{if(part.isMesh)part.userData.playerId=p.id});m.add(u.gun);u.weaponType=p.weapon;u.weaponTier=tier}
@@ -301,17 +302,27 @@ function syncMeshes(dt=1/60){
     const distance=teleport?0:Math.hypot(dx,dz)*blend,y=Math.max(0,(p.y??1.7)-1.7);
     m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
     const yaw=(p.yaw||0)+(p.bot?Math.PI:0),turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
-    u.stride=(u.stride||0)+distance*5;u.walk=THREE.MathUtils.lerp(u.walk||0,Math.min(1,distance/Math.max(.001,dt)/5),blend);
+    const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);
+    u.stride=(u.stride||0)+distance*(5.7+Math.min(3,u.speed*.18));
     const avatar=u.avatar,elapsed=now-(meleeVisuals.get(p.id)??-Infinity),swing=elapsed>=0&&elapsed<MELEE.duration&&p.alive!==false;
     const holding=p.equipped==='bat';u.gun.visible=!swing&&!holding;u.bat.visible=swing||holding;
-    const flinch=reaction?Math.max(0,1-(now-reaction.time)/380):0,air=p.grounded===false?1:0;m.rotation.x=reaction?.killed?Math.min(Math.PI/2,deathAge/650*Math.PI/2):-Math.sin(flinch*Math.PI)*(reaction?.headshot ? .16 : .07);m.rotation.z=Math.sin(flinch*Math.PI)*.045;if(reaction?.killed)m.position.y=y-Math.min(.6,deathAge/650*.6);m.scale.y=p.sliding ? .78 : 1;if(u.halo)u.halo.visible=p.alive!==false;
-    // Gun and hands breathe together. Legs use distance, so standing still never foot-slides.
-    const lift=Math.sin(now*.002+p.id.length)*.006+Math.abs(Math.sin(u.stride))*.015*u.walk;
-    if(u.wasGround===false&&p.grounded!==false)u.landAt=now;u.wasGround=p.grounded;const landing=Math.max(0,1-(now-(u.landAt??-Infinity))/180);
-    u.gun.position.y=lift;u.gun.rotation.x=p.reloading?-.35:0;u.gun.position.z=Math.max(0,1-(now-(remoteShotTimes.get(p.id)??-Infinity))/160)*.08;
+    const flinch=reaction?Math.max(0,1-(now-reaction.time)/380):0,deathT=reaction?.killed?smoothStep(Math.min(1,deathAge/650)):0;
+    const sideSpeed=teleport?0:(dx*Math.cos(yaw)-dz*Math.sin(yaw))/Math.max(dt,.001),turnLean=clamp(turn*1.2,-.13,.13),moveLean=clamp(sideSpeed*.006,-.08,.08),hitPitch=-Math.sin(flinch*Math.PI)*(reaction?.headshot?.16:.07);
+    m.rotation.x=damp(m.rotation.x,reaction?.killed?Math.PI/2*deathT:hitPitch,reaction?.killed?10:22);m.rotation.z=damp(m.rotation.z,reaction?.killed?0:Math.sin(flinch*Math.PI)*.045-turnLean-moveLean,15);
+    if(reaction?.killed)m.position.y=y-.6*deathT;
+    if(u.wasGround===false&&p.grounded!==false)u.landAt=now;u.wasGround=p.grounded;
+    const landAge=now-(u.landAt??-Infinity),landing=landAge<260?Math.sin(Math.min(1,landAge/260)*Math.PI):0,slideTarget=p.sliding?.78:1;
+    m.scale.y=damp(m.scale.y,slideTarget-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
+    // Breathing, recoil and footfalls use damped values so low-rate network snapshots never pop.
+    const step=Math.sin(u.stride),lift=Math.sin(now*.002+p.id.length)*.006+Math.abs(step)*.017*u.walk-landing*.055;
+    const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*.085:0;
+    if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
+    u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:0,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:0,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
-    if(avatar){avatar.position.y=lift-landing*.06;avatar.userData.legs.forEach((leg,i)=>{leg.rotation.x=air>.05?-.42:Math.sin(u.stride+i*Math.PI)*.55*u.walk;leg.rotation.z=air>.05?(i?-.12:.12):0});
-      avatar.userData.arms.forEach((arm,i)=>{const arc=Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI);arm.rotation.x=swing?(i===1?-1.1+arc*1.9:.4):holding?(i===1?-.5:.3):p.reloading?(i===1?-.3:.65):0;arm.rotation.z=swing&&i===1?-.5*arc:0});
+    if(avatar){avatar.position.y=damp(avatar.position.y,lift,20);
+      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,0,12);torso.position.y=damp(torso.position.y,.75,12);torso.position.z=damp(torso.position.z,0,12);torso.rotation.x=damp(torso.rotation.x,0,12);torso.rotation.y=damp(torso.rotation.y,0,12);torso.rotation.z=damp(torso.rotation.z,0,12)}
+      avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045),18)});
+      avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk;let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
     }
     poseEmote(m,p);
   });
@@ -790,7 +801,7 @@ function stopEmote(notify=true){
 }
 function poseEmote(model,p,now=Date.now()){
   const u=model.userData,avatar=u.avatar,torso=avatar?.userData.danceTorso,active=p.alive!==false&&p.emoteUntil>now;
-  if(!active){if(u.dancing){if(torso){torso.position.set(0,.75,0);torso.rotation.set(0,0,0);avatar.userData.legs.forEach(l=>l.rotation.set(0,0,0));avatar.userData.arms.forEach(a=>a.rotation.set(0,0,0))}else model.rotation.x=model.rotation.z=0;u.dancing=false}return}
+  if(!active){u.dancing=false;return}
   const t=(now-(p.emoteUntil-EMOTE_DURATION))/1000,blend=smoothStep(t/.25)*smoothStep((p.emoteUntil-now)/250),beat=Math.sin(t*15),sway=Math.sin(t*7.5);
   u.dancing=true;u.gun.visible=false;u.bat.visible=true;
   if(torso){
