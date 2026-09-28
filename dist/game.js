@@ -12,10 +12,7 @@ const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
 const CHARACTERS = [
   {id:'wooden',name:'Wooden Bonker',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
-  {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'},
-  {id:'croco',name:'Croco Macchiato',emoji:'🐊',color:0x57c5be,shape:'croco'},
-  {id:'mozza',name:'Signora Mozza',emoji:'🧀',color:0xffeee0,shape:'cheese'},
-  {id:'gabbiano',name:'Gabbiano Gelato',emoji:'🍦',color:0xe97b9c,shape:'cone'}
+  {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'}
 ];
 const WEAPONS = {
   ar:{name:'Espresso AR',icon:'☕',automatic:true,damage:18,rate:115,mag:30,reserve:90,reload:1450,spread:.006,pellets:1,range:72,color:0xe74831,move:1},
@@ -49,6 +46,7 @@ const buildObjects=new Map(),buildTemplates=new Map(),buildCooldowns=new Map();l
 const BUILD_LIFETIME=30000;
 let audioContext,soundMuted=false,eliminationUntil=0,landingKick=0,shotShake=0,slideView=0,targetCheckAt=0,damageSerial=0;
 const remoteShotTimes=new Map();
+const botBrains=new Map();
 let audioMaster,audioLimiter,reloadSoundStage=0;
 const soundBuffers=new Map(),soundVoices=new Set();
 function unlockAudio(){try{const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return;if(!audioContext){audioContext=new Audio();audioMaster=audioContext.createGain();audioMaster.gain.value=.65;audioLimiter=audioContext.createDynamicsCompressor();audioLimiter.threshold.value=-10;audioLimiter.knee.value=8;audioLimiter.ratio.value=8;audioLimiter.attack.value=.003;audioLimiter.release.value=.12;audioMaster.connect(audioLimiter);audioLimiter.connect(audioContext.destination);for(const type of ['ar','smg','shotgun','sniper','magout','magin','bolt'])for(let variant=0;variant<3;variant++)makeSoundBuffer(type,variant)}if(audioContext.state==='suspended')audioContext.resume().catch(()=>{})}catch{}}
@@ -174,11 +172,12 @@ function updatePickups(now){
     // The host owns availability, proximity, rarity rolls and health; clients cannot claim rewards.
     for(const item of state.pickups){if(Date.now()<item.readyAt)continue;
       for(const p of Object.values(state.players)){
-        if(!p.alive||p.bot||(p.y??1.7)>2.7||Math.hypot(p.x-item.x,p.z-item.z)>1.35)continue;
+        if(!p.alive||(p.y??1.7)>2.7||Math.hypot(p.x-item.x,p.z-item.z)>1.35)continue;
         if(item.kind==='health'){
           if(p.health>=100)continue;item.readyAt=Date.now()+35000;p.health=Math.min(100,p.health+35);
           if(p.id===state.id){state.health=p.health;toast('HEALTH RESTORED');updateHud()}else state.connections.get(p.id)?.send({t:'healed',health:p.health});
         }else{
+          if(p.bot)continue;
           const roll=Math.random(),tier=roll<.6?1:roll<.9?2:3,types=Object.keys(WEAPONS),available=types.filter(type=>weaponTier(type,p.arsenal)<3);if(!available.length)continue;
           const type=available[Math.floor(Math.random()*available.length)],current=weaponTier(type,p.arsenal);
           p.arsenal={...p.arsenal,[type]:Math.max(tier,current+1)};p.weapon=p.nextWeapon=type;p.equipped='gun';item.readyAt=Date.now()+65000;
@@ -301,7 +300,7 @@ function syncMeshes(dt=1/60){
     const x=p.x||0,z=p.z||0,dx=x-m.position.x,dz=z-m.position.z,teleport=!u.initialized||Math.hypot(dx,dz)>12;
     const distance=teleport?0:Math.hypot(dx,dz)*blend,y=Math.max(0,(p.y??1.7)-1.7);
     m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
-    const yaw=(p.yaw||0)+(p.bot?Math.PI:0),turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
+    const yaw=p.yaw||0,turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
     const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);
     u.stride=(u.stride||0)+distance*(5.7+Math.min(3,u.speed*.18));
     const avatar=u.avatar,elapsed=now-(meleeVisuals.get(p.id)??-Infinity),swing=elapsed>=0&&elapsed<MELEE.duration&&p.alive!==false;
@@ -348,7 +347,7 @@ function joinRoom(){
 }
 function acceptConnection(c){
   if(Object.keys(state.players).length>=6){c.on('open',()=>{c.send({t:'reject',reason:'That room is full.'});setTimeout(()=>c.close(),100)});return}
-  c.on('open',()=>{state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:(c.metadata?.name||'New Rot').slice(0,16),char:c.metadata?.char||'wooden',weapon:Object.hasOwn(WEAPONS,c.metadata?.weapon)?c.metadata.weapon:'ar',...spawnFor(state.connections.size),kills:0,deaths:0,health:100,alive:true,arsenal:{}};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id,map:state.map});hostSnapshot();updateLobby()});
+  c.on('open',()=>{const requestedChar=c.metadata?.char,char=CHARACTERS.some(x=>x.id===requestedChar)?requestedChar:'wooden';state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:(c.metadata?.name||'New Rot').slice(0,16),char,weapon:Object.hasOwn(WEAPONS,c.metadata?.weapon)?c.metadata.weapon:'ar',...spawnFor(state.connections.size),kills:0,deaths:0,health:100,alive:true,arsenal:{}};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id,map:state.map});hostSnapshot();updateLobby()});
   c.on('data',d=>handleHostMessage(d,c.peer));c.on('close',()=>{state.connections.delete(c.peer);delete state.players[c.peer];broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive});updateLobby()});
 }
 function wireClient(c){c.on('open',()=>setError(''));c.on('data',d=>handleClientMessage(d));c.on('close',()=>leaveToHome('The host closed the room.'));c.on('error',peerError)}
@@ -424,7 +423,7 @@ function beginMatch(asHost){
 function practice(){
   state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();
   if(state.map==='surf'){startMatch();return}
-  for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bot Barista','Nonna.exe','Gelato NPC'][i],char:CHARACTERS[i%4].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()
+  botBrains.clear();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bonker Bot','Neegy.exe','Caffè Hunter'][i],char:CHARACTERS[i%2].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()
 }
 
 function applyHit(shooterId,targetId,damage,headshot=false){
@@ -495,7 +494,7 @@ function resolveShot(id,now=performance.now()){
   for(const p of Object.values(state.players)){
     if(p.id===id||p.alive===false)continue;
     let model=hitModels.get(p.id);if(!model){model=createPlayerMesh(p,false,true);model.userData.hitMeshes=[];model.traverse(m=>{if(m.isMesh&&!m.userData.noHit)model.userData.hitMeshes.push(m)});hitModels.set(p.id,model)}
-    model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,(p.yaw||0)+(p.bot?Math.PI:0),0);model.scale.y=p.sliding?.78:1;poseEmote(model,p);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
+    model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,p.yaw||0,0);model.scale.y=p.sliding?.78:1;poseEmote(model,p);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
   }
   const origin=new THREE.Vector3(attacker.x,(attacker.y??1.7)-(attacker.sliding ? .42 : 0),attacker.z),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(attacker.pitch||0,attacker.yaw||0,0,'YXZ')),ends=[],impacts=[];
   const spread=attacker.aiming?(w.adsSpread??w.spread*.55):w.spread;
@@ -918,7 +917,37 @@ function updateClimbing(dt){
   if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0}
 }
 function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
-function updateBots(dt){if(!state.practice||!state.matchActive)return;Object.values(state.players).filter(p=>p.bot&&p.alive).forEach((p,i)=>{const a=performance.now()/2300+i*2.1,nextX=clamp(p.x+Math.sin(a)*dt*2.3,-31,31),nextZ=clamp(p.z+Math.cos(a*1.2)*dt*2.3,-31,31);if(!collides(nextX,p.z))p.x=nextX;if(!collides(p.x,nextZ))p.z=nextZ;p.yaw=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);if(Math.random()<dt*.28){const d=Math.hypot(camera.position.x-p.x,camera.position.z-p.z);if(d<35&&state.alive&&hasClearShot(new THREE.Vector3(p.x,1.7,p.z),camera.position))applyHit(p.id,state.id,10)}})}
+function updateBots(dt){
+  if(!state.practice||!state.matchActive||state.map==='surf')return;const now=performance.now(),players=Object.values(state.players),bots=players.filter(p=>p.bot&&p.alive);
+  for(const [i,p] of bots.entries()){
+    let b=botBrains.get(p.id);if(!b){b={strafe:i%2?1:-1,nextThink:0,nextShot:now+500+i*180,nextHop:now+1200+i*350,ammo:WEAPONS[p.weapon].mag,vx:0,vz:0,stuck:0,targetId:null,aimYaw:0,aimPitch:0};botBrains.set(p.id,b)}
+    const w=weaponStats(p.weapon,p.arsenal||{});
+    if(now>=b.nextThink){
+      const candidates=players.filter(q=>q.id!==p.id&&q.alive!==false),eye=new THREE.Vector3(p.x,p.y??1.7,p.z);let best=null,bestScore=Infinity;
+      for(const q of candidates){const point=new THREE.Vector3(q.x,(q.y??1.7)-.25,q.z),distance=eye.distanceTo(point),visible=hasClearShot(eye,point),score=distance+(visible?0:10)+(q.id===b.targetId?-5:0)+(q.id===state.id?-1.5:0);if(score<bestScore){best=q;bestScore=score}}
+      if(best?.id!==b.targetId){b.targetId=best?.id;b.acquireAt=now+280+Math.random()*240}
+      b.strafe=Math.random()<.24?-b.strafe:b.strafe;b.noiseYaw=(Math.random()-.5)*({sniper:.030,ar:.055,smg:.080,shotgun:.105}[p.weapon]||.06);b.noisePitch=(Math.random()-.5)*({sniper:.022,ar:.040,smg:.055,shotgun:.075}[p.weapon]||.04);b.nextThink=now+180+Math.random()*130;
+    }
+    if(p.reloading){if(now>=b.reloadUntil){p.reloading=false;b.ammo=w.mag}}else if(b.ammo<=0){p.reloading=true;b.reloadUntil=now+w.reload}
+    const target=state.players[b.targetId];if(!target||target.alive===false)continue;
+    const dx=target.x-p.x,dz=target.z-p.z,distance=Math.max(.01,Math.hypot(dx,dz)),eye=new THREE.Vector3(p.x,p.y??1.7,p.z),targetPoint=new THREE.Vector3(target.x,(target.y??1.7)-.25,target.z),visible=hasClearShot(eye,targetPoint);
+    const desiredYaw=Math.atan2(-dx,-dz),desiredPitch=Math.atan2(targetPoint.y-eye.y,distance),yawNoise=visible?b.noiseYaw:0,pitchNoise=visible?b.noisePitch:0;
+    b.aimYaw+=(yawNoise-b.aimYaw)*(1-Math.exp(-5*dt));b.aimPitch+=(pitchNoise-b.aimPitch)*(1-Math.exp(-5*dt));const aimYaw=desiredYaw+b.aimYaw,turn=Math.atan2(Math.sin(aimYaw-(p.yaw||0)),Math.cos(aimYaw-(p.yaw||0))),turnStep=(p.weapon==='sniper'?2.4:3.4)*dt;p.yaw=(p.yaw||0)+clamp(turn,-turnStep,turnStep);p.pitch=THREE.MathUtils.lerp(p.pitch||0,desiredPitch+b.aimPitch,1-Math.exp(-7*dt));
+    p.aiming=visible&&(p.weapon==='sniper'||p.weapon==='ar'&&distance>18);p.equipped='gun';
+    let goalX=target.x,goalZ=target.z,healing=false;if(p.health<58){const health=state.pickups.filter(x=>x.kind==='health'&&Date.now()>=x.readyAt).sort((a,c)=>Math.hypot(p.x-a.x,p.z-a.z)-Math.hypot(p.x-c.x,p.z-c.z))[0];if(health){goalX=health.x;goalZ=health.z;healing=true}}
+    const gx=goalX-p.x,gz=goalZ-p.z,goalDistance=Math.max(.01,Math.hypot(gx,gz)),desiredRange={shotgun:7,smg:12,ar:19,sniper:29}[p.weapon]||16,radial=healing||!visible||distance>desiredRange+3?1:distance<desiredRange-3?-1:0,strafe=healing?0:b.strafe*(visible?.82:.25),moveX=gx/goalDistance*radial+gz/goalDistance*strafe,moveZ=gz/goalDistance*radial-gx/goalDistance*strafe,moveLength=Math.max(.01,Math.hypot(moveX,moveZ)),speed=(healing?5.8:p.weapon==='sniper'?4.2:5.1);
+    let wishX=moveX/moveLength*speed,wishZ=moveZ/moveLength*speed;for(const q of bots)if(q!==p){const ox=p.x-q.x,oz=p.z-q.z,d=Math.hypot(ox,oz);if(d<1.6&&d>.01){wishX+=ox/d*(1.6-d)*3;wishZ+=oz/d*(1.6-d)*3}}
+    b.vx=THREE.MathUtils.lerp(b.vx,wishX,1-Math.exp(-7*dt));b.vz=THREE.MathUtils.lerp(b.vz,wishZ,1-Math.exp(-7*dt));const attempts=[[b.vx,b.vz],[b.vz,-b.vx],[-b.vz,b.vx],[-b.vx,-b.vz]];let moved=false;
+    for(const [vx,vz] of attempts){const nx=clamp(p.x+vx*dt,-31.5,31.5),nz=clamp(p.z+vz*dt,-31.5,31.5);if(!collides(nx,nz)){p.x=nx;p.z=nz;moved=true;break}}
+    b.stuck=moved?Math.max(0,b.stuck-dt*2):b.stuck+dt;if(b.stuck>.28){b.strafe*=-1;b.vx*=-.5;b.vz*=-.5;b.stuck=0;b.jumpStart=now;b.jumpUntil=now+650}
+    if(now>b.nextHop&&visible&&distance<24){b.nextHop=now+1700+Math.random()*1800;if(Math.random()<.46){b.jumpStart=now;b.jumpUntil=now+650}}
+    if(now<(b.jumpUntil||0)){const t=(now-b.jumpStart)/650;p.y=1.7+Math.sin(Math.max(0,Math.min(1,t))*Math.PI)*1.05;p.grounded=false}else{p.y=1.7;p.grounded=true}
+    if(!p.reloading){
+      const aimError=Math.hypot(Math.atan2(Math.sin(desiredYaw-p.yaw),Math.cos(desiredYaw-p.yaw)),desiredPitch-p.pitch),tolerance={shotgun:.16,smg:.085,ar:.060,sniper:.032}[p.weapon]||.07;
+      if(visible&&distance<w.range&&now>=b.acquireAt&&now>=b.nextShot&&aimError<tolerance){resolveShot(p.id,now);b.ammo--;const burstGap=w.rate*(w.automatic?.95+Math.random()*.28:1.05+Math.random()*.18);b.nextShot=now+burstGap;if(w.automatic&&Math.random()<.12)b.nextShot+=180+Math.random()*220}
+    }
+  }
+}
 function updateNetwork(now){if(now-state.lastNet<65)return;state.lastNet=now;if(state.host)hostSnapshot();else publishCombatPose()}
 function updateTimer(){
   if(!state.matchActive)return;
