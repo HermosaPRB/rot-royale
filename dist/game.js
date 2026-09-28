@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
 import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
+import { createNeegyCharacter } from './neegy-character.js?v=neegy-1';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=vertical-18';
@@ -11,6 +12,7 @@ const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
 const CHARACTERS = [
   {id:'wooden',name:'Wooden Bonker',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
+  {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'},
   {id:'croco',name:'Croco Macchiato',emoji:'🐊',color:0x57c5be,shape:'croco'},
   {id:'mozza',name:'Signora Mozza',emoji:'🧀',color:0xffeee0,shape:'cheese'},
   {id:'gabbiano',name:'Gabbiano Gelato',emoji:'🍦',color:0xe97b9c,shape:'cone'}
@@ -255,7 +257,7 @@ function makeWeapon(){
   updateWeaponModel();
   const skin=mat(0xe49b52,.55);
   meleeModel=new THREE.Group();camera.add(meleeModel);meleeModel.add(createMeleeBat());
-  const fist=new THREE.Mesh(new THREE.SphereGeometry(.065,10,7),skin);fist.position.set(0,.16,0);meleeModel.add(fist);meleeModel.visible=false;
+  const fist=new THREE.Mesh(new THREE.SphereGeometry(.065,10,7),skin);fist.name='melee-hand';fist.position.set(0,.16,0);meleeModel.add(fist);meleeModel.visible=false;
 }
 function updateWeaponModel(){
   const w=weaponStats(state.selectedWeapon),key=state.selectedWeapon+':'+w.tier;
@@ -263,14 +265,17 @@ function updateWeaponModel(){
     if(!weaponRigs.has(key))weaponRigs.set(key,createFirstPersonWeapon(w.color,state.selectedWeapon,w.tier));
     weaponModel.clear();weaponModel.add(weaponRigs.get(key));weaponModel.userData.type=state.selectedWeapon;weaponModel.userData.key=key;weaponModel.userData.rig=weaponRigs.get(key);
   }
+  const goldHands=state.selectedChar==='neegy',color=goldHands?0xe5ac24:0xd8954d;
+  for(const name of ['trigger','support'])weaponModel.userData.rig.userData[name].traverse(m=>{if(m.isMesh){m.material.color.set(color);m.material.metalness=goldHands?.55:0;m.material.roughness=goldHands?.32:.56}});
+  const fist=meleeModel?.getObjectByName('melee-hand');if(fist){fist.material.color.set(color);fist.material.metalness=goldHands?.55:0;fist.material.roughness=goldHands?.32:.56}
   $('weapon-name').textContent=state.equipped==='bat'?'WOODEN BAT':w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent='∞';
   $('weapon-rarity').textContent=state.equipped==='bat'?'':w.tier?`${RARITIES[w.tier].name} · +${Math.round((RARITIES[w.tier].damage-1)*100)}% DAMAGE`:'STANDARD';$('weapon-rarity').style.color='#'+RARITIES[w.tier].color.toString(16).padStart(6,'0');
 }
 
 function createPlayerMesh(p,register=true,collisionOnly=false){
   const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
-  if(c.shape==='wooden'){
-    const avatar=createWoodenCharacter(register||collisionOnly?'game':'preview');g.add(avatar);g.userData.avatar=avatar;
+  if(c.shape==='wooden'||c.shape==='neegy'){
+    const avatar=(c.shape==='neegy'?createNeegyCharacter:createWoodenCharacter)(register||collisionOnly?'game':'preview');g.add(avatar);g.userData.avatar=avatar;
     const torso=new THREE.Group();torso.position.y=.75;torso.name='dance-torso';
     for(const part of [...avatar.children])if(!avatar.userData.legs.includes(part)){part.position.y-=.75;torso.add(part)}
     avatar.add(torso);avatar.userData.danceTorso=torso;
@@ -284,7 +289,7 @@ function createPlayerMesh(p,register=true,collisionOnly=false){
   if(g.userData.avatar){const grip=g.userData.avatar.getObjectByName('trigger-hand');grip.add(bat);bat.position.y=-.13;bat.rotation.x=-.25}else{g.add(bat);bat.position.set(.35,1.25,-.45)}
   g.userData.bat=bat;g.traverse(m=>{if(m.isMesh)m.userData.playerId=p.id});
   g.userData.gun=gun;g.userData.weaponType=p.weapon;g.userData.weaponTier=tier;
-  if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)*47)%360)/360,.8,.62),halo=new THREE.Mesh(new THREE.RingGeometry(.58,.68,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));halo.rotation.x=-Math.PI/2;halo.position.y=.025;halo.userData.noHit=true;g.add(halo);g.userData.halo=halo;const band=new THREE.Mesh(new THREE.TorusGeometry(c.shape==='wooden'?.30:.54,.045,5,16),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.35,roughness:.5}));band.rotation.x=Math.PI/2;band.position.y=1.12;band.userData.noHit=true;(g.userData.avatar?.userData.danceTorso||g).add(band);if(g.userData.avatar)band.position.y-=.75}
+if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)*47)%360)/360,.8,.62),halo=new THREE.Mesh(new THREE.RingGeometry(.58,.68,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));halo.rotation.x=-Math.PI/2;halo.position.y=.025;halo.userData.noHit=true;g.add(halo);g.userData.halo=halo;const band=new THREE.Mesh(new THREE.TorusGeometry(c.shape==='neegy'?.235:c.shape==='wooden'?.30:.54,.045,5,16),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.35,roughness:.5}));band.rotation.x=Math.PI/2;band.position.y=1.12;band.userData.noHit=true;(g.userData.avatar?.userData.danceTorso||g).add(band);if(g.userData.avatar)band.position.y-=.75}
   if(register){const tag=document.createElement('div');tag.className='name-tag';g.userData.tag=tag;world.add(g);playerMeshes.set(p.id,g)}return g;
 }
 function syncMeshes(dt=1/60){
@@ -662,34 +667,69 @@ function updateMovement(dt){
     const speed=previousSpeed*Math.exp(-.4*dt),steer=moving?1-Math.exp(-1.6*dt):0;state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.01){state.velocityX*=speed/length;state.velocityZ*=speed/length}moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);updateVerticalMovement(dt);return;
   }
   if(state.keys.Space||!state.onGround)state.slideUntil=0;
+  // ── CS:GO-style surf: player is ALWAYS AIRBORNE on the ramp surface ──
+  // Gravity pulls down; ramp tangent projection converts it into slope-parallel speed.
+  // Source AirAccelerate gives air-strafe control. Never press W to gain speed.
+  const surfRamp=(()=>{const r=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
+    if(!r)return null;const foot=camera.position.y-1.7,surf=rampHeight(r,camera.position.x,camera.position.z);
+    return foot<=surf+.05?r:null})();
+  if(surfRamp){
+    const nx=surfRamp.normal.x,ny=surfRamp.normal.y,nz=surfRamp.normal.z;
+    // Gravity.
+    state.velocityY-=22*dt;
+    // Project velocity onto ramp tangent plane (removes component going into surface).
+    const vn=state.velocityX*nx+state.velocityY*ny+state.velocityZ*nz;
+    state.velocityX-=vn*nx;state.velocityY-=vn*ny;state.velocityZ-=vn*nz;
+    // Source AirAccelerate: project wish onto tangent plane, add bounded accel.
+    if(moving){
+      const AIR_ACCEL=10,AIR_MAX_WISHSPEED=30;
+      let wx=wish.x,wy=0,wz=wish.z;
+      const wn=wx*nx+wy*ny+wz*nz;
+      wx-=wn*nx;wy-=wn*ny;wz-=wn*nz;
+      const wl=Math.hypot(wx,wy,wz);if(wl>.001){wx/=wl;wy/=wl;wz/=wl}
+      const cs=state.velocityX*wx+state.velocityY*wy+state.velocityZ*wz;
+      const as=clamp(AIR_MAX_WISHSPEED-cs,0,AIR_ACCEL*AIR_MAX_WISHSPEED*dt);
+      state.velocityX+=as*wx;state.velocityY+=as*wy;state.velocityZ+=as*wz;
+    }
+    // Reproject onto tangent after air-accel.
+    const vn2=state.velocityX*nx+state.velocityY*ny+state.velocityZ*nz;
+    state.velocityX-=vn2*nx;state.velocityY-=vn2*ny;state.velocityZ-=vn2*nz;
+    // Jump exits ramp (launches into air).
+    if(state.keys.Space){state.velocityY=8;state.onGround=false;state.onRamp=false}
+    else{
+      // Move horizontally (ramp colliders skipped in swept axis).
+      moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
+      // After moving, check if still on ramp surface.
+      const stillOn=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
+      if(stillOn){
+        const surf=rampHeight(stillOn,camera.position.x,camera.position.z);
+        const newFoot=camera.position.y-1.7;
+        if(newFoot<=surf+.3){
+          // Push up to surface (player falls onto it).
+          camera.position.y=surf+1.7;
+          state.onGround=false;state.onRamp=true;
+        }else{
+          // Above surface — airborne, normal air physics next frame.
+          state.onGround=false;state.onRamp=false;
+        }
+      }else{
+        // Off the ramp entirely — airborne.
+        state.onGround=false;state.onRamp=false;
+      }
+    }
+    // Safety clamp.
+    const sp=Math.hypot(state.velocityX,state.velocityZ);if(sp>2000){const sc=2000/sp;state.velocityX*=sc;state.velocityZ*=sc}
+    return;
+  }
   if(state.onGround&&!state.onRamp){
     const jumping=!!state.keys.Space,walk=8.5*movementSpeed(),speed=moving&&jumping?Math.max(11*movementSpeed(),previousSpeed)+(state.hopChain>0?2.6:0):moving&&state.landingGrace>0?Math.max(walk,previousSpeed):walk;
     state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed;
     if(jumping){state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
-  }else if(state.onGround&&state.onRamp){
-    // Surf: on a ramp, use air-accel instead of ground-snap to preserve speed.
-    // Clip velocity component going into the ramp surface.
-    const ramp=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
-    if(ramp){
-      const nx=ramp.normal.x,nz=ramp.normal.z,ny=ramp.normal.y;
-      const vn=state.velocityX*nx+state.velocityY*ny+state.velocityZ*nz;
-      if(vn<0){state.velocityX-=vn*nx;state.velocityY-=vn*ny;state.velocityZ-=vn*nz}
-    }
-    if(moving){
-      const AIR_ACCEL=2.2,AIR_MAX_WISHSPEED=1.2;
-      const wishspeed=Math.max(AIR_MAX_WISHSPEED,Math.min(8.5*movementSpeed(),AIR_MAX_WISHSPEED));
-      const currentspeed=state.velocityX*wish.x+state.velocityZ*wish.z;
-      const addspeed=clamp(wishspeed-currentspeed,0,AIR_ACCEL*wishspeed*dt);
-      state.velocityX+=addspeed*wish.x;state.velocityZ+=addspeed*wish.z;
-    }
-    const jumping=!!state.keys.Space;
-    if(jumping){state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
-    // Source-style AirAccelerate: project velocity onto wish, add bounded accel.
-    const AIR_ACCEL=(state.selectedWeapon==='smg'&&weaponTier('smg')?2.86:2.2),AIR_MAX_WISHSPEED=1.2,walk=8.5*movementSpeed();
-    const wishspeed=Math.max(AIR_MAX_WISHSPEED,Math.min(walk,AIR_MAX_WISHSPEED));
+    // Source-style AirAccelerate for normal airborne movement.
+    const AIR_ACCEL=2.2,AIR_MAX_WISHSPEED=1.2;
     const currentspeed=state.velocityX*wish.x+state.velocityZ*wish.z;
-    const addspeed=clamp(wishspeed-currentspeed,0,AIR_ACCEL*wishspeed*dt);
+    const addspeed=clamp(AIR_MAX_WISHSPEED-currentspeed,0,AIR_ACCEL*AIR_MAX_WISHSPEED*dt);
     state.velocityX+=addspeed*wish.x;state.velocityZ+=addspeed*wish.z;
   }else{state.velocityX*=Math.exp(-.6*dt);state.velocityZ*=Math.exp(-.6*dt)}
   const safeSpeed=Math.hypot(state.velocityX,state.velocityZ);if(safeSpeed>2000){const s=2000/safeSpeed;state.velocityX*=s;state.velocityZ*=s}
@@ -699,10 +739,10 @@ function updateMovement(dt){
 function moveSweptAxis(axis,delta){
   // Check the entire path, not just the endpoint: uncapped speed cannot skip thin cover.
   // Ordered contacts allow a staircase to be climbed even during a fast frame.
-  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=axis==='x'?34:35;
+  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?90:(axis==='x'?34:35);
   const requested=old+delta;let next=clamp(requested,-bound,bound);
   const radius=c=>c.stair?0:.55;
-  const contacts=colliders.filter(c=>side>c['min'+cross]-radius(c)&&side<c['max'+cross]+radius(c)).sort((a,b)=>delta>0?(a['min'+suffix]-radius(a))-(b['min'+suffix]-radius(b)):(b['max'+suffix]+radius(b))-(a['max'+suffix]+radius(a)));
+  const contacts=colliders.filter(c=>!c.ramp&&side>c['min'+cross]-radius(c)&&side<c['max'+cross]+radius(c)).sort((a,b)=>delta>0?(a['min'+suffix]-radius(a))-(b['min'+suffix]-radius(b)):(b['max'+suffix]+radius(b))-(a['max'+suffix]+radius(a)));
   for(const c of contacts){
     const near=c['min'+suffix]-radius(c),far=c['max'+suffix]+radius(c);
     const crossing=delta>0?old<=near&&next>near:old>=far&&next<far;if(!crossing)continue;
