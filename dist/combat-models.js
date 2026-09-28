@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {mergeRigidParts} from './surface-details.js?v=detail-6';
 
-const gunTemplates=new Map();let batTemplate;
+const gunTemplates=new Map();let batTemplate,knifeTemplate;
 // Shared, material-batched templates: close-up detail is paid for only on the local gun.
 export function createHeldGun(color,type='ar',detailed=false,rarity=0){
   if(!['ar','shotgun','sniper','smg'].includes(type))type='ar';
@@ -135,4 +135,18 @@ export function createMeleeBat(){
     batTemplate=new THREE.Mesh(new THREE.LatheGeometry(shape,16),new THREE.MeshStandardMaterial({color:0xd48339,roughness:.5}));batTemplate.name='melee-bat';batTemplate.userData.noHit=true;batTemplate.castShadow=true;
   }
   return batTemplate.clone();
+}
+export function createMeleeKnife(){
+  if(!knifeTemplate){
+    knifeTemplate=new THREE.Group();knifeTemplate.name='melee-knife';
+    const steel=new THREE.MeshStandardMaterial({color:0xd7dee4,roughness:.22,metalness:.85}),
+      grip=new THREE.MeshStandardMaterial({color:0x2a2f34,roughness:.6,metalness:.15}),
+      guard=new THREE.MeshStandardMaterial({color:0x8a8f96,roughness:.35,metalness:.7});
+    const blade=new THREE.Mesh(new THREE.ConeGeometry(.045,.62,4),steel);blade.rotation.x=-Math.PI/2;blade.rotation.y=Math.PI/4;blade.position.y=.62;knifeTemplate.add(blade);
+    const bolster=new THREE.Mesh(new THREE.BoxGeometry(.09,.05,.045),guard);bolster.position.y=.27;knifeTemplate.add(bolster);
+    const handle=new THREE.Mesh(new THREE.CapsuleGeometry(.032,.24,3,8),grip);handle.position.y=.10;knifeTemplate.add(handle);
+    const pommel=new THREE.Mesh(new THREE.SphereGeometry(.036,8,6),guard);pommel.position.y=-.05;knifeTemplate.add(pommel);
+    knifeTemplate.traverse(m=>{if(m.isMesh){m.userData.noHit=true;m.castShadow=true}});
+  }
+  return knifeTemplate.clone();
 }

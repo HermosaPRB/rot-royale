@@ -3,10 +3,10 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { detailPlaza } from './plaza.js?v=detail-6';
 import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
 import { createNeegyCharacter } from './neegy-character.js?v=face-30';
-import { createHeldGun, createFirstPersonWeapon, createMeleeBat } from './combat-models.js?v=cyber-16';
+import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=vertical-18';
-import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN } from './surf.js?v=surf-26';
+import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN } from './surf.js?v=surf-27';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','lobby','pause','results'];
@@ -251,14 +251,23 @@ function makePlaza(){
   [[-26,-18],[25,-23],[-28,27],[29,29],[-10,31],[13,-31]].forEach(([x,z],i)=>{box(x,1.3,z,3.8,2.6,3.8,i%2?0x57c5be:0xe74831);box(x+.8,3,z-.4,2.2,1.5,2.2,0xf2b84b)});
   detailPlaza({world,box,mat,shotBlockers,colliders,buildings});
 }
+function meleeLabel(char=state.selectedChar){return char==='neegy'?'KNIFE':'WOODEN BAT'}
+// Wooden Bonker swings a bat; Neegy carries a knife — same melee slot, different mesh.
+function updateMeleeModel(){
+  if(!meleeModel)return;
+  const knife=state.selectedChar==='neegy';if(meleeModel.userData.knife===knife)return;
+  const old=meleeModel.getObjectByName('melee-bat')||meleeModel.getObjectByName('melee-knife');if(old)meleeModel.remove(old);
+  meleeModel.add(knife?createMeleeKnife():createMeleeBat());meleeModel.userData.knife=knife;
+}
 function makeWeapon(){
   weaponModel=new THREE.Group();camera.add(weaponModel);scene.add(camera);
   updateWeaponModel();
   const skin=mat(0xe49b52,.55);
-  meleeModel=new THREE.Group();camera.add(meleeModel);meleeModel.add(createMeleeBat());
+  meleeModel=new THREE.Group();camera.add(meleeModel);updateMeleeModel();
   const fist=new THREE.Mesh(new THREE.SphereGeometry(.065,10,7),skin);fist.name='melee-hand';fist.position.set(0,.16,0);meleeModel.add(fist);meleeModel.visible=false;
 }
 function updateWeaponModel(){
+  updateMeleeModel();
   const w=weaponStats(state.selectedWeapon),key=state.selectedWeapon+':'+w.tier;
   if(weaponModel.userData.key!==key){
     if(!weaponRigs.has(key))weaponRigs.set(key,createFirstPersonWeapon(w.color,state.selectedWeapon,w.tier));
@@ -267,7 +276,7 @@ function updateWeaponModel(){
   const goldHands=state.selectedChar==='neegy',color=goldHands?0xe5ac24:0xd8954d;
   for(const name of ['trigger','support'])weaponModel.userData.rig.userData[name].traverse(m=>{if(m.isMesh){m.material.color.set(color);m.material.metalness=goldHands?.55:0;m.material.roughness=goldHands?.32:.56}});
   const fist=meleeModel?.getObjectByName('melee-hand');if(fist){fist.material.color.set(color);fist.material.metalness=goldHands?.55:0;fist.material.roughness=goldHands?.32:.56}
-  $('weapon-name').textContent=state.equipped==='bat'?'WOODEN BAT':w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent='∞';
+  $('weapon-name').textContent=state.equipped==='bat'?meleeLabel():w.name.toUpperCase();$('ammo').textContent=state.ammo;$('reserve').textContent='∞';
   $('weapon-rarity').textContent=state.equipped==='bat'?'':w.tier?`${RARITIES[w.tier].name} · +${Math.round((RARITIES[w.tier].damage-1)*100)}% DAMAGE`:'STANDARD';$('weapon-rarity').style.color='#'+RARITIES[w.tier].color.toString(16).padStart(6,'0');
 }
 
@@ -284,7 +293,7 @@ function createPlayerMesh(p,register=true,collisionOnly=false){
   const eyeMat=new THREE.MeshBasicMaterial({color:0x191218});[-.2,.2].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),eyeMat);e.position.set(x,2.12,-.48);g.add(e)});
   }
   const tier=weaponTier(p.weapon,p.arsenal||{}),gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon]?.color||0x333333,p.weapon||'ar',!register&&!collisionOnly,tier);g.add(gun);
-  const bat=createMeleeBat();bat.visible=false;
+  const bat=c.shape==='neegy'?createMeleeKnife():createMeleeBat();bat.visible=false;
   if(g.userData.avatar){const grip=g.userData.avatar.getObjectByName('trigger-hand');grip.add(bat);bat.position.y=-.13;bat.rotation.x=-.25}else{g.add(bat);bat.position.set(.35,1.25,-.45)}
   g.userData.bat=bat;g.traverse(m=>{if(m.isMesh)m.userData.playerId=p.id});
   g.userData.gun=gun;g.userData.weaponType=p.weapon;g.userData.weaponTier=tier;
@@ -404,7 +413,7 @@ function updateLobby(){
 function startMatch(){
   if(!state.host)return;
   state.matchEnd=state.map==='surf'?Infinity:Date.now()+180000;state.arsenal={};
-  Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...(state.map==='surf'?{x:SURF_SPAWN[0],z:SURF_SPAWN[2]}:spawnFor(i))}));
+  Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...(state.map==='surf'?{x:SURF_SPAWN[0],y:SURF_SPAWN[1],z:SURF_SPAWN[2]}:spawnFor(i))}));
   resetPickups();broadcast({t:'start',end:state.matchEnd,players:state.players,map:state.map,pickups:state.pickups});beginMatch(true)
 }
 function beginMatch(asHost){
@@ -413,11 +422,11 @@ function beginMatch(asHost){
   state.climbing=null;
   state.arsenal={...state.players[state.id]?.arsenal};if(Object.hasOwn(WEAPONS,state.players[state.id]?.weapon))state.selectedWeapon=state.players[state.id].weapon;state.lootNoticeUntil=0;
   state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.pendingWeapon=state.selectedWeapon;
-  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped='gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
+  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped=state.map==='surf'?'bat':'gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
   state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.dip=weaponMotion.aimKick=0;
   state.matchActive=true;state.mode='game';state.health=100;state.kills=0;state.deaths=0;state.alive=true;const w=WEAPONS[state.selectedWeapon];state.ammo=w.mag;state.reserve=Infinity;state.reloading=false;
   if(state.map==='surf')state.surfStart=Date.now();
-  const me=state.players[state.id];if(me){camera.position.set(me.x||0,1.7,me.z||12)}else camera.position.set(0,1.7,12);
+  const me=state.players[state.id];if(me){camera.position.set(me.x||0,me.y||1.7,me.z||12)}else camera.position.set(0,1.7,12);
   state.keys={};state.velocityY=0;state.onGround=true;camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
 }
 function practice(){
@@ -590,9 +599,9 @@ function updateCombatVisuals(now){
   if(swing){const arc=t<.18?-smoothStep(t/.18)*.18:t<.55?-.18+smoothStep((t-.18)/.37)*1.18:1-smoothStep((t-.55)/.45);meleeModel.position.set(.48-arc*.78,-.55+arc*.12,-.65-arc*.15);meleeModel.rotation.set(-.45+arc*.6,-arc*.25,-.7+arc*1.8)}
   else{meleeModel.position.set(.47,-.51+Math.sin(now*.003)*.012,-.70);meleeModel.rotation.set(-.25,0,-.36)}
   meleeModel.position.y-=dip*.85;meleeModel.rotation.x-=dip*.55;
-  if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?'WOODEN BAT':weaponStats(state.selectedWeapon).name.toUpperCase();
-  else if(switching)$('weapon-name').textContent=(state.switchPending==='bat'?'WOODEN BAT':weaponStats(state.selectedWeapon).name.toUpperCase())+'…';
-  $('melee-status').textContent=switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):'F · EQUIP BAT';
+  if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase();
+  else if(switching)$('weapon-name').textContent=(state.switchPending==='bat'?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase())+'…';
+  $('melee-status').textContent=switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
 }
 function toggleBat(){
   const now=performance.now();
@@ -680,9 +689,11 @@ function updateMovement(dt){
   // ── CS:GO-style surf: player is ALWAYS AIRBORNE on the ramp surface ──
   // Gravity pulls down; ramp tangent projection converts it into slope-parallel speed.
   // Source AirAccelerate gives air-strafe control. Never press W to gain speed.
-  const surfRamp=(()=>{const r=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
-    if(!r)return null;const foot=camera.position.y-1.7,surf=rampHeight(r,camera.position.x,camera.position.z);
-    return foot<=surf+.05?r:null})();
+  // Trust state.onRamp — set by the precise landing check in updateVerticalMovement
+  // (old>=top-.04&&next<=top). A loose "foot below the ramp's surface height at this
+  // x/z" recheck here would also fire for anyone standing on ordinary ground that
+  // merely happens to sit underneath the ramp's footprint, far from its actual surface.
+  const surfRamp=state.onRamp?colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ):null;
   if(surfRamp){
     const nx=surfRamp.normal.x,ny=surfRamp.normal.y,nz=surfRamp.normal.z;
     // Gravity.
@@ -749,7 +760,7 @@ function updateMovement(dt){
 function moveSweptAxis(axis,delta){
   // Check the entire path, not just the endpoint: uncapped speed cannot skip thin cover.
   // Ordered contacts allow a staircase to be climbed even during a fast frame.
-  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?90:(axis==='x'?34:35);
+  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?220:(axis==='x'?34:35);
   const requested=old+delta;let next=clamp(requested,-bound,bound);
   const radius=c=>c.stair?0:.55;
   const contacts=colliders.filter(c=>!c.ramp&&side>c['min'+cross]-radius(c)&&side<c['max'+cross]+radius(c)).sort((a,b)=>delta>0?(a['min'+suffix]-radius(a))-(b['min'+suffix]-radius(b)):(b['max'+suffix]+radius(b))-(a['max'+suffix]+radius(a)));
@@ -766,8 +777,12 @@ function moveSweptAxis(axis,delta){
 function verticalOverlap(c,foot){return foot<(c.maxY??Infinity)-.001&&foot+1.9>(c.minY??-Infinity)+.001}
 function collides(x,z,foot=0){return colliders.some(c=>{const r=c.stair?0:.55;return verticalOverlap(c,foot)&&x>c.minX-r&&x<c.maxX+r&&z>c.minZ-r&&z<c.maxZ+r})}
 function rampHeight(c,x,z){
+  // heightAtMin/heightAtMax are the actual physical height at the min/max edge of the
+  // collider's footprint — NOT the same as minY/maxY (which only give the box's flat
+  // min/max, losing which edge is high vs low once the ramp descends as x/z increases).
   const t=c.axis==='x'?(x-c.minX)/(c.maxX-c.minX):(z-c.minZ)/(c.maxZ-c.minZ);
-  return c.minY+clamp(t,0,1)*(c.maxY-c.minY);
+  const a=c.heightAtMin??c.minY,b=c.heightAtMax??c.maxY;
+  return a+clamp(t,0,1)*(b-a);
 }
 function updateVerticalMovement(dt){
   const wasGround=state.onGround,impactSpeed=-state.velocityY,old=camera.position.y-1.7;state.velocityY-=22*dt;let next=old+state.velocityY*dt,ground=0;state.onRamp=false;
@@ -954,7 +969,12 @@ function updateTimer(){
   if(state.map==='surf'){
     const elapsed=Math.floor((Date.now()-state.surfStart)/1000);$('timer').textContent=`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
     // OOB check: teleport back to start if fallen below floor.
-    if(camera.position.y-1.7<SURF_FLOOR_Y+2){camera.position.set(SURF_SPAWN[0],SURF_SPAWN[1],SURF_SPAWN[2]);state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.hopChain=0}
+    // Bounds-based reset, not just falling below the floor: past the ramp's end there's
+    // no collider at all, so the engine's implicit ground plane (y=0, used as a fallback
+    // by every map) would otherwise just catch the player and strand them walking on
+    // thin air instead of looping back. This is also how the run "finishes" — reaching
+    // the end (or straying off the sides) loops you straight back to the start.
+    if(camera.position.y-1.7<SURF_FLOOR_Y+2||camera.position.z>196||camera.position.z<-16||Math.abs(camera.position.x)>16){camera.position.set(SURF_SPAWN[0],SURF_SPAWN[1],SURF_SPAWN[2]);state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.hopChain=0}
     return;
   }
   const left=Math.max(0,state.matchEnd-Date.now()),s=Math.ceil(left/1000);$('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;if(left<=0&&state.host)finishMatch(state.players)
