@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
 import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
-import { createNeegyCharacter } from './neegy-character.js?v=neegy-1';
+import { createNeegyCharacter } from './neegy-character.js?v=face-30';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=vertical-18';

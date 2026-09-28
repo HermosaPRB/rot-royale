@@ -63,8 +63,15 @@ function buildNeegy(preview){
   tube([[-.17,2.012,-.225],[-.095,2.025,-.312],[0,2.016,-.345],[.095,2.025,-.312],[.17,2.012,-.225]],.013,shadow);
   tube([[-.16,2.034,-.237],[-.065,2.045,-.327],[0,2.03,-.343],[.065,2.045,-.327],[.16,2.034,-.237]],.018,light);
   tube([[-.16,1.995,-.224],[-.08,1.977,-.32],[0,1.978,-.335],[.08,1.977,-.32],[.16,1.995,-.224]],.020,gold);
-  for(const x of [-.075,-.025,.025,.075]){const tooth=add(new THREE.BoxGeometry(.042,.075,.045),light,x,1.935,-.297);tooth.rotation.x=.08}
-  oval(gold,0,1.855,-.115,.115,.095,.102);
+  // Four separate buck teeth with visible gaps; the old wide boxes read as one slab.
+  oval(shadow,0,1.946,-.296,.096,.042,.025);
+  for(const [i,x] of [-.066,-.022,.022,.066].entries()){
+    const tooth=add(new THREE.BoxGeometry(.029,i===0||i===3?.056:.068,.034),light,x,1.944-(i===0||i===3?.004:0),-.323);
+    tooth.rotation.set(.08,0,(i-1.5)*-.025);
+  }
+  // A recessed, tapered jaw preserves the reference's long face without a round chin bump.
+  oval(gold,0,1.865,-.052,.073,.128,.064);
+  tube([[-.095,1.935,-.12],[-.066,1.865,-.14],[0,1.82,-.13],[.066,1.865,-.14],[.095,1.935,-.12]],.011,light);
   for(let i=0;i<3;i++){const y=2.345+i*.031;tube([[-.145,y,-.125],[0,y-.014,-.169],[.145,y,-.122]],.0055,i===1?shadow:light)}
   // Sparse crown hairs visible from front and back.
   tube([[0,2.47,.065],[-.015,2.535,.06],[-.052,2.565,.065]],.009,light);
