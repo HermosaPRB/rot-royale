@@ -33,6 +33,7 @@
             <h2 class="panel-title">Your fighter</h2>
             <div id="character-list" class="choice-grid characters" role="radiogroup" aria-label="Choose character"></div>
           </section>
+          <button id="settings-open" class="settings-open" type="button">Settings</button>
           <div class="desktop-note">DESKTOP ARENA SHOOTER</div>
         </aside>
 
@@ -64,15 +65,29 @@
           <p id="map-description" class="map-location">Two-floor houses · rooftop ladders · vehicle choke</p>
           <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town</option><option value="piazza">Piazza Panic</option><option value="surf">Surf Circuit</option></select>
           <div class="rule-heading">How to win</div>
-          <p>Most eliminations in 3 minutes wins.</p>
+          <p id="win-rule">Most eliminations in 3 minutes wins.</p>
           <details class="match-rules"><summary>Rules & controls</summary><ul><li>Unlimited respawns · 3 seconds</li><li>Ctrl slides while moving · Space jumps out</li><li>M toggles sound</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li><li>Stairs inside each Neon Town house</li><li>E dances · near ladders, E grabs them</li><li>B builds · T switches wall/ramp/floor · R rotates</li><li>Click to snap & stack · Unlimited builds · lasts 30s</li></ul></details>
           <details class="loot-rules"><summary>Cases & health</summary><p>2 cyber cases: arrive after 20s, refill 65s after collection. Unlocks last this round and survive death.</p><p>Roll: Rare 60% · Epic 30% · Legendary 10%. Damage +6% / +12% / +18%, with faster firing and reloads. Duplicates upgrade at least one tier; maxed weapons are skipped.</p><p>Cyber perks: AR tighter fire · shotgun 12 pellets · SMG stronger air steering · sniper pierces one player for 65% damage. Walls still stop shots.</p><p>3 health packs: +35 HP, up to 100. Refill after 35s. Full health? Leave it for later.</p></details>
           <div class="room-tip">Create a room and share its code.<br>The host starts when friends arrive.</div>
         </aside>
         <aside class="rules-strip" aria-label="How to play">
           <strong>CONTROLS</strong>
-          <span><kbd>WASD</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd>SHIFT</kbd> toggle aim</span><span><kbd>F</kbd> gun / bat</span><span><kbd>R</kbd> reload</span><span><kbd>I</kbd> inspect</span><span><kbd>CTRL</kbd> slide</span><span><kbd>M</kbd> sound</span><span><kbd>HOLD SPACE</kbd> bhop while moving</span><span><kbd>1–4 WHEN DEAD</kbd> loadout</span><span><kbd>ESC</kbd> menu</span>
+          <span><kbd data-bind-action="forward">W</kbd><kbd data-bind-action="left">A</kbd><kbd data-bind-action="back">S</kbd><kbd data-bind-action="right">D</kbd> move</span><span><kbd>MOUSE</kbd> look</span><span><kbd>CLICK</kbd> fire / swing</span><span><kbd data-bind-action="aim">SHIFT</kbd> toggle aim</span><span><kbd data-bind-action="melee">F</kbd> gun / bat</span><span><kbd data-bind-action="reload">R</kbd> reload</span><span><kbd data-bind-action="inspect">I</kbd> inspect</span><span><kbd data-bind-action="slide">CTRL</kbd> slide</span><span><kbd data-bind-action="sound">M</kbd> sound</span><span><kbd data-bind-action="jump">SPACE</kbd> bhop</span><span><kbd>ESC</kbd> menu</span>
         </aside>
+      </div>
+    </section>
+
+    <section id="settings" class="screen" aria-labelledby="settings-title">
+      <div class="modal-card settings-card">
+        <div class="eyebrow">CONTROLS</div>
+        <h2 id="settings-title">Keybind settings</h2>
+        <p>Choose an action, then press its new key. Conflicting keys swap automatically.</p>
+        <div id="keybind-list" class="keybind-list"></div>
+        <div class="settings-actions">
+          <button id="settings-reset" class="text-button" type="button">Restore defaults</button>
+          <button id="settings-close" class="primary" type="button">Done</button>
+        </div>
+        <small>Mouse look, firing, and Escape remain fixed.</small>
       </div>
     </section>
 
@@ -137,6 +152,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=face-30"></script>
+  <script type="module" src="./game.js?v=surf-33"></script>
 </body>
 </html>

@@ -6,10 +6,51 @@ import { createNeegyCharacter } from './neegy-character.js?v=face-30';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=vertical-18';
-import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN } from './surf.js?v=surf-27';
+import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS } from './surf.js?v=surf-33';
 
 const $ = (id) => document.getElementById(id);
-const screens = ['home','lobby','pause','results'];
+const screens = ['home','settings','lobby','pause','results'];
+const DEFAULT_BINDS={
+  forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',aim:'ShiftLeft',
+  melee:'KeyF',reload:'KeyR',emote:'KeyE',build:'KeyB',buildType:'KeyT',inspect:'KeyI',
+  slide:'ControlLeft',sound:'KeyM',capture:'KeyL',turnLeft:'ArrowLeft',turnRight:'ArrowRight',
+  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4'
+};
+const BIND_LABELS={
+  forward:'Move forward',back:'Move backward',left:'Move left',right:'Move right',jump:'Jump / bunny hop',
+  aim:'Aim',melee:'Gun / bat',reload:'Reload / rotate build',emote:'Emote / interact',build:'Build mode',
+  buildType:'Change build piece',inspect:'Inspect weapon',slide:'Slide',sound:'Toggle sound',
+  capture:'Capture mouse',turnLeft:'Keyboard turn left',turnRight:'Keyboard turn right',
+  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4'
+};
+function loadKeybinds(){try{const saved=JSON.parse(localStorage.getItem('rot-royale-keybinds')||'{}');return Object.fromEntries(Object.entries(DEFAULT_BINDS).map(([action,code])=>[action,typeof saved[action]==='string'?saved[action]:code]))}catch{return{...DEFAULT_BINDS}}}
+let keybinds=loadKeybinds(),rebindingAction=null;
+function keyName(code){return code.replace(/^Key/,'').replace(/^Digit/,'').replace('ControlLeft','Left Ctrl').replace('ControlRight','Right Ctrl').replace('ShiftLeft','Left Shift').replace('ShiftRight','Right Shift').replace('Arrow','').replace('Space','Spacebar')}
+function actionForPhysical(code){
+  const found=Object.keys(keybinds).find(action=>keybinds[action]===code);if(found)return found;
+  if(code==='ShiftRight'&&keybinds.aim==='ShiftLeft')return'aim';
+  if(code==='ControlRight'&&keybinds.slide==='ControlLeft')return'slide';
+  return null;
+}
+function canonicalCode(code){
+  const action=actionForPhysical(code);if(action)return DEFAULT_BINDS[action];
+  return Object.values(DEFAULT_BINDS).includes(code)?`Unbound:${code}`:code;
+}
+function saveKeybinds(){try{localStorage.setItem('rot-royale-keybinds',JSON.stringify(keybinds))}catch{}}
+function renderKeybinds(){
+  const root=$('keybind-list');if(!root)return;
+  root.innerHTML=Object.keys(DEFAULT_BINDS).map(action=>`<div class="keybind-row"><span>${BIND_LABELS[action]}</span><button type="button" class="keybind-button${rebindingAction===action?' listening':''}" data-bind="${action}">${rebindingAction===action?'Press a key…':keyName(keybinds[action])}</button></div>`).join('');
+  updateBindLabels();
+}
+function updateBindLabels(){
+  document.querySelectorAll?.('[data-bind-action]').forEach(node=>node.textContent=keyName(keybinds[node.dataset.bindAction]));
+  if($('control-hint'))$('control-hint').textContent=`${keyName(keybinds.forward)}/${keyName(keybinds.left)}/${keyName(keybinds.back)}/${keyName(keybinds.right)} TO MOVE · CLICK TO CAPTURE MOUSE`;
+}
+function setKeybind(action,code){
+  const old=keybinds[action],conflict=Object.keys(keybinds).find(other=>other!==action&&keybinds[other]===code);
+  if(conflict)keybinds[conflict]=old;
+  keybinds[action]=code;rebindingAction=null;saveKeybinds();renderKeybinds();
+}
 const CHARACTERS = [
   {id:'wooden',name:'Wooden Bonker',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
   {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'}
@@ -26,7 +67,7 @@ const state = {
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,map:'neon',arsenal:{},pickups:[],lootNoticeUntil:0,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
   pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,emoteUntil:0,emoteYaw:0,emoteEquipment:'gun',
-  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0,slideUntil:0,slideCooldown:0,onRamp:false,surfStart:0,
+  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0,slideUntil:0,slideCooldown:0,onRamp:false,surfStart:0,surfCheckpoint:0,surfBest:Infinity,
   switchStart:-Infinity,switchPending:null,switchSwapped:false,inspectStart:-Infinity
 };
 
@@ -139,7 +180,7 @@ const colliders=[];
 const ladders=[];
 const shotBlockers=[];
 const materials=new Map();
-const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},surf:{name:'SURF CIRCUIT',description:'Ramp course · no combat · time yourself',spawns:[[0,0]],pickups:[],sky:0x1a2a3a}};
+const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
 const RARITIES=[{name:'STANDARD',color:0xb9c5d1,damage:1,rate:1,reload:1},{name:'RARE',color:0x5bbbff,damage:1.06,rate:.97,reload:.96},{name:'EPIC',color:0xcf83ff,damage:1.12,rate:.94,reload:.92},{name:'LEGENDARY',color:0xffce62,damage:1.18,rate:.90,reload:.88}];
 const CYBER_NAMES={ar:'Ion Pulse AR',shotgun:'Nova Scattergun',sniper:'Prism Rail Sniper',smg:'Volt Shredder'};
 const pickupMeshes=new Map(),mapCache=new Map();let builtMap=null;
@@ -425,14 +466,24 @@ function beginMatch(asHost){
   state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped=state.map==='surf'?'bat':'gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
   state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.dip=weaponMotion.aimKick=0;
   state.matchActive=true;state.mode='game';state.health=100;state.kills=0;state.deaths=0;state.alive=true;const w=WEAPONS[state.selectedWeapon];state.ammo=w.mag;state.reserve=Infinity;state.reloading=false;
-  if(state.map==='surf')state.surfStart=Date.now();
+  if(state.map==='surf'){state.surfStart=Date.now();state.surfCheckpoint=0}
   const me=state.players[state.id];if(me){camera.position.set(me.x||0,me.y||1.7,me.z||12)}else camera.position.set(0,1.7,12);
-  state.keys={};state.velocityY=0;state.onGround=true;camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
+  state.keys={};state.velocityY=0;state.onGround=true;if(state.map==='surf')camera.lookAt(-3,SURF_SPAWN[1]-12,SURF_SPAWN[2]+30);else camera.lookAt(0,1.7,1);showScreen(null);focusGame();$('hud').classList.add('active');$('control-hint').classList.remove('hidden');updateWeaponModel();updateHud();requestMouseCapture();if(asHost)hostSnapshot();
 }
 function practice(){
   state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();
   if(state.map==='surf'){startMatch();return}
   botBrains.clear();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bonker Bot','Neegy.exe','Caffè Hunter'][i],char:CHARACTERS[i%2].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()
+}
+
+function resetSurfRun(full=false,announce=true){
+  if(state.map!=='surf')return;
+  const checkpoint=!full&&state.surfCheckpoint>0?SURF_CHECKPOINTS[state.surfCheckpoint-1]:null;
+  const spawn=checkpoint?.spawn||SURF_SPAWN;
+  camera.position.set(...spawn);camera.rotation.set(0,Math.PI,0);
+  state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.hopChain=0;state.keys={};
+  if(full){state.surfCheckpoint=0;state.surfStart=Date.now();if(announce)toast('Surf run restarted')}
+  else if(announce)toast(checkpoint?`Stage ${state.surfCheckpoint+1} checkpoint`:'Back to start');
 }
 
 function applyHit(shooterId,targetId,damage,headshot=false){
@@ -599,9 +650,10 @@ function updateCombatVisuals(now){
   if(swing){const arc=t<.18?-smoothStep(t/.18)*.18:t<.55?-.18+smoothStep((t-.18)/.37)*1.18:1-smoothStep((t-.55)/.45);meleeModel.position.set(.48-arc*.78,-.55+arc*.12,-.65-arc*.15);meleeModel.rotation.set(-.45+arc*.6,-arc*.25,-.7+arc*1.8)}
   else{meleeModel.position.set(.47,-.51+Math.sin(now*.003)*.012,-.70);meleeModel.rotation.set(-.25,0,-.36)}
   meleeModel.position.y-=dip*.85;meleeModel.rotation.x-=dip*.55;
-  if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase();
+  if(state.map==='surf')$('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;
+  else if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase();
   else if(switching)$('weapon-name').textContent=(state.switchPending==='bat'?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase())+'…';
-  $('melee-status').textContent=switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
+  $('melee-status').textContent=state.map==='surf'?'A / D + MOUSE · R RESTART':switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
 }
 function toggleBat(){
   const now=performance.now();
@@ -715,28 +767,22 @@ function updateMovement(dt){
     // Reproject onto tangent after air-accel.
     const vn2=state.velocityX*nx+state.velocityY*ny+state.velocityZ*nz;
     state.velocityX-=vn2*nx;state.velocityY-=vn2*ny;state.velocityZ-=vn2*nz;
-    // Jump exits ramp (launches into air).
-    if(state.keys.Space){state.velocityY=8;state.onGround=false;state.onRamp=false}
-    else{
-      // Move horizontally (ramp colliders skipped in swept axis).
-      moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
-      // After moving, check if still on ramp surface.
-      const stillOn=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
-      if(stillOn){
-        const surf=rampHeight(stillOn,camera.position.x,camera.position.z);
-        const newFoot=camera.position.y-1.7;
-        if(newFoot<=surf+.3){
-          // Push up to surface (player falls onto it).
-          camera.position.y=surf+1.7;
-          state.onGround=false;state.onRamp=true;
-        }else{
-          // Above surface — airborne, normal air physics next frame.
-          state.onGround=false;state.onRamp=false;
-        }
+    // Move horizontally (ramp colliders are skipped by swept-axis collision).
+    // Holding jump is intentionally ignored while attached so a start jump does not
+    // instantly bounce the player off the first bank.
+    moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
+    const stillOn=colliders.find(c=>c.ramp&&camera.position.x>=c.minX&&camera.position.x<=c.maxX&&camera.position.z>=c.minZ&&camera.position.z<=c.maxZ);
+    if(stillOn){
+      const surf=rampHeight(stillOn,camera.position.x,camera.position.z);
+      const newFoot=camera.position.y-1.7;
+      if(newFoot<=surf+.3){
+        camera.position.y=surf+1.7;
+        state.onGround=false;state.onRamp=true;
       }else{
-        // Off the ramp entirely — airborne.
         state.onGround=false;state.onRamp=false;
       }
+    }else{
+      state.onGround=false;state.onRamp=false;
     }
     // Safety clamp.
     const sp=Math.hypot(state.velocityX,state.velocityZ);if(sp>2000){const sc=2000/sp;state.velocityX*=sc;state.velocityZ*=sc}
@@ -748,11 +794,11 @@ function updateMovement(dt){
     if(jumping){state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
     // Source-style AirAccelerate for normal airborne movement.
-    const AIR_ACCEL=2.2,AIR_MAX_WISHSPEED=1.2;
+    const AIR_ACCEL=state.map==='surf'?7.5:2.2,AIR_MAX_WISHSPEED=state.map==='surf'?18:1.2;
     const currentspeed=state.velocityX*wish.x+state.velocityZ*wish.z;
     const addspeed=clamp(AIR_MAX_WISHSPEED-currentspeed,0,AIR_ACCEL*AIR_MAX_WISHSPEED*dt);
     state.velocityX+=addspeed*wish.x;state.velocityZ+=addspeed*wish.z;
-  }else{state.velocityX*=Math.exp(-.6*dt);state.velocityZ*=Math.exp(-.6*dt)}
+  }else if(state.map!=='surf'){state.velocityX*=Math.exp(-.6*dt);state.velocityZ*=Math.exp(-.6*dt)}
   const safeSpeed=Math.hypot(state.velocityX,state.velocityZ);if(safeSpeed>2000){const s=2000/safeSpeed;state.velocityX*=s;state.velocityZ*=s}
   moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);
   updateVerticalMovement(dt);
@@ -780,12 +826,13 @@ function rampHeight(c,x,z){
   // heightAtMin/heightAtMax are the actual physical height at the min/max edge of the
   // collider's footprint — NOT the same as minY/maxY (which only give the box's flat
   // min/max, losing which edge is high vs low once the ramp descends as x/z increases).
+  if(Number.isFinite(c.slopeX)||Number.isFinite(c.slopeZ))return c.centerY+(c.slopeX||0)*(x-c.centerX)+(c.slopeZ||0)*(z-c.centerZ);
   const t=c.axis==='x'?(x-c.minX)/(c.maxX-c.minX):(z-c.minZ)/(c.maxZ-c.minZ);
   const a=c.heightAtMin??c.minY,b=c.heightAtMax??c.maxY;
   return a+clamp(t,0,1)*(b-a);
 }
 function updateVerticalMovement(dt){
-  const wasGround=state.onGround,impactSpeed=-state.velocityY,old=camera.position.y-1.7;state.velocityY-=22*dt;let next=old+state.velocityY*dt,ground=0;state.onRamp=false;
+  const wasGround=state.onGround,impactSpeed=-state.velocityY,old=camera.position.y-1.7;state.velocityY-=22*dt;let next=old+state.velocityY*dt,ground=state.map==='surf'?SURF_FLOOR_Y:0;state.onRamp=false;
   for(const c of colliders){
     const margin=c.stair||c.ramp?0:.20;
     if(camera.position.x<c.minX-margin||camera.position.x>c.maxX+margin||camera.position.z<c.minZ-margin||camera.position.z>c.maxZ+margin)continue;
@@ -968,13 +1015,10 @@ function updateTimer(){
   if(!state.matchActive)return;
   if(state.map==='surf'){
     const elapsed=Math.floor((Date.now()-state.surfStart)/1000);$('timer').textContent=`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
-    // OOB check: teleport back to start if fallen below floor.
-    // Bounds-based reset, not just falling below the floor: past the ramp's end there's
-    // no collider at all, so the engine's implicit ground plane (y=0, used as a fallback
-    // by every map) would otherwise just catch the player and strand them walking on
-    // thin air instead of looping back. This is also how the run "finishes" — reaching
-    // the end (or straying off the sides) loops you straight back to the start.
-    if(camera.position.y-1.7<SURF_FLOOR_Y+2||camera.position.z>196||camera.position.z<-16||Math.abs(camera.position.x)>16){camera.position.set(SURF_SPAWN[0],SURF_SPAWN[1],SURF_SPAWN[2]);state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.hopChain=0}
+    while(state.surfCheckpoint<SURF_CHECKPOINTS.length&&camera.position.z>=SURF_CHECKPOINTS[state.surfCheckpoint].triggerZ){state.surfCheckpoint++;toast(`Checkpoint ${state.surfCheckpoint}/${SURF_CHECKPOINTS.length}`)}
+    if(camera.position.z>=SURF_FINISH_Z){
+      const run=(Date.now()-state.surfStart)/1000;state.surfBest=Math.min(state.surfBest,run);resetSurfRun(true,false);toast(`Finish · ${run.toFixed(2)}s${run===state.surfBest?' · BEST':''}`);
+    }else if(camera.position.y-1.7<SURF_FLOOR_Y+1||camera.position.z>228||camera.position.z<-32||Math.abs(camera.position.x)>34)resetSurfRun(false);
     return;
   }
   const left=Math.max(0,state.matchEnd-Date.now()),s=Math.ceil(left/1000);$('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;if(left<=0&&state.host)finishMatch(state.players)
@@ -989,7 +1033,7 @@ function updateHud(){
     $('health-number').textContent=Math.round(Math.hypot(state.velocityX,state.velocityZ)*10)/10;$('health-bar').style.width='100%';
     const elapsed=state.matchActive&&state.surfStart?Math.floor((Date.now()-state.surfStart)/1000):0;
     $('kills').textContent=`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
-    $('leader').textContent=Math.round(Math.hypot(state.velocityX,state.velocityZ)*10)/10;
+    $('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;$('leader').textContent=Math.round(Math.hypot(state.velocityX,state.velocityZ)*10)/10;
     return;
   }
   const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top
@@ -1035,20 +1079,37 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
+function openSettings(){rebindingAction=null;state.mode='settings';renderKeybinds();showScreen('settings')}
+function closeSettings(){rebindingAction=null;state.mode='home';showScreen('home');renderKeybinds()}
+function remapKeyboardEvent(e){
+  if(e.type==='keydown'&&rebindingAction){
+    e.preventDefault();e.stopImmediatePropagation();
+    if(e.code==='Escape'){rebindingAction=null;renderKeybinds()}else if(!e.repeat)setKeybind(rebindingAction,e.code);
+    return;
+  }
+  if(e.type==='keydown'&&state.mode==='settings'&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSettings();return}
+  const mapped=canonicalCode(e.code);if(mapped!==e.code)try{Object.defineProperty(e,'code',{value:mapped})}catch{}
+}
+addEventListener('keydown',remapKeyboardEvent,true);addEventListener('keyup',remapKeyboardEvent,true);
 addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
+addEventListener('keydown',e=>{if(isPlaying()&&state.map==='surf'&&e.code==='KeyR'&&!e.repeat){e.preventDefault();resetSurfRun(true)}});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(!controls.isLocked)requestMouseCapture();if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('capture-mouse').onclick=requestMouseCapture;
+$('settings-open').onclick=openSettings;$('settings-close').onclick=closeSettings;
+$('settings-reset').onclick=()=>{keybinds={...DEFAULT_BINDS};rebindingAction=null;saveKeybinds();renderKeybinds();toast('Default controls restored')};
+$('keybind-list').onclick=e=>{const button=e.target.closest?.('[data-bind]');if(!button)return;rebindingAction=button.dataset.bind;renderKeybinds()};
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 $('respawn-weapons').onclick=e=>{const button=e.target.closest('[data-respawn-weapon]');if(button)chooseRespawnWeapon(button.dataset.respawnWeapon)};
 $('map-select').onchange=e=>{if(state.mode==='home'){setMap(e.target.value);updateLobbyModeUI()}};
 function updateLobbyModeUI(){
   const surf=state.map==='surf';
-  $('create-room').style.display=surf?'none':'';$('room-panel')?.classList?.toggle('hidden',surf);
+  $('create-room').style.display=surf?'none':'';$('room-panel').style.display=surf?'none':'';
   $('practice').querySelector('span').textContent=surf?'Start Surfing':'Practice';
-  $('practice').querySelector('small').textContent=surf?'Solo ramp course · no combat':'Play against bots';
-  $('match-badge').innerHTML=surf?'Solo <span>ramp course</span>':'Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=surf?'Air-strafe down ramps · chain speed · beat your time':'Most eliminations wins. Respawn and keep playing.';
+  $('practice').querySelector('small').textContent=surf?'Four-stage skill course · no combat':'Play against bots';
+  $('match-badge').innerHTML=surf?'Solo <span>CS-style surf</span>':'Free-for-all <span>3-minute rounds</span>';
+  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · steer with mouse · R restarts':'Most eliminations wins. Respawn and keep playing.';
+  $('win-rule').textContent=surf?'Reach the gold finish gate. Falling returns you to the latest checkpoint.':'Most eliminations in 3 minutes wins.';
 }
-buildChoices();initWorld();showScreen('home');
+renderKeybinds();buildChoices();initWorld();showScreen('home');

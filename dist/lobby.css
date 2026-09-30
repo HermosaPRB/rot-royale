@@ -51,6 +51,19 @@
 #home .rules-strip{border-top:1px solid #648fa950;padding:18px 0;margin-top:8px;gap:12px 18px;font-size:13px;color:#34576c}
 #home .rules-strip strong{font:600 13px 'DM Sans',sans-serif;letter-spacing:0}
 #home kbd{background:#ffffff40;border:1px solid #648fa940;box-shadow:none;color:#193d53;font:500 12px 'DM Sans',sans-serif}
+#home .settings-open{align-self:flex-start;background:transparent;border:1px solid #648fa980;border-radius:6px;color:#193d53;padding:9px 14px;font-size:14px;font-weight:600}
+#settings{background:#8fc9e8;padding:28px;overflow:auto}
+.settings-card{width:min(760px,calc(100vw - 36px));max-height:none;background:#f7fbfd;color:#193d53;border:1px solid #628ba3;border-radius:10px;box-shadow:0 18px 50px #17384b30;padding:30px}
+.settings-card h2{margin:4px 0 6px;font:700 30px 'DM Sans',system-ui,sans-serif;letter-spacing:-.03em}
+.settings-card>p{margin:0 0 22px;color:#557284;font:400 15px/1.45 'DM Sans',system-ui,sans-serif}
+.settings-card>small{display:block;margin-top:16px;color:#6a8290;font:400 13px 'DM Sans',system-ui,sans-serif}
+.keybind-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 22px}
+.keybind-row{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:42px;border-bottom:1px solid #b8ceda;padding:5px 0;font:500 14px 'DM Sans',system-ui,sans-serif}
+.keybind-button{min-width:112px;border:1px solid #7194a8;border-radius:5px;background:white;color:#193d53;padding:8px 10px;font:700 13px 'DM Sans',system-ui,sans-serif}
+.keybind-button.listening{background:#f8c45b;border-color:#c18d26;color:#263a43}
+.settings-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+.settings-actions button{min-width:150px}
+@media(max-width:650px){.keybind-list{grid-template-columns:1fr}.settings-card{padding:22px}.settings-actions{flex-direction:column-reverse}.settings-actions button{width:100%}}
 @media(max-width:1100px){#home{padding:24px}#home .home-shell{grid-template-columns:180px minmax(320px,1fr);gap:28px}#home .match-info{display:block;grid-column:1/-1;max-width:none;border-top:1px solid #648fa950;padding-top:20px}#home .fighter-stage{height:38vh}#home .rules-strip{grid-column:1/-1}}
 @media(max-width:650px){#home{padding:24px 18px}#home .home-shell{display:flex;flex-direction:column;gap:28px}#home .identity-panel{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:20px}#home .brand-block{margin:0}#home .fighter-picker{grid-column:1/-1}#home .choice-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#home .character small{font-size:12px}#home .center-lobby,#home .match-info{width:100%}#home .fighter-stage{height:320px}#home .room-panel{flex-wrap:wrap}#home .room-panel label{width:100%}#home .rules-strip{display:flex}}
 #home .play-actions button{font-family:'DM Sans',system-ui,sans-serif}

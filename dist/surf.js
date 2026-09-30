@@ -1,148 +1,123 @@
 import * as THREE from 'three';
 
-// Surf course constants — referenced by game.js for spawn/out-of-bounds handling.
-export const SURF_FLOOR_Y = -60;
-export const SURF_SPAWN = [0, 42.7, -6];
+export const SURF_FLOOR_Y = -48;
+export const SURF_SPAWN = [-5.5, 47, -23];
+export const SURF_FINISH_Z = 217;
+export const SURF_CHECKPOINTS = [
+  {triggerZ: 48, spawn: [0, 25.2, 48]},
+  {triggerZ: 108, spawn: [7, 18.2, 108]},
+  {triggerZ: 166, spawn: [-6, 10.2, 166]}
+];
 
-// One continuous CS:GO-style surf ramp: a single tilted plane the player rides while
-// airborne, gaining speed purely from air-strafing (never from pressing W). No gaps,
-// no separate stages — this is the "simple/beginner" style: one long, honest ramp.
-// heightAtMin/heightAtMax are the ACTUAL height at the collider's minZ/maxZ edge
-// (order matters — do not swap these, rampHeight() in game.js interpolates linearly
-// from heightAtMin at minZ to heightAtMax at maxZ).
-function addRamp(world, colliders, shotBlockers, mat, {x, z, w, d, axis, heightAtMin, heightAtMax, color, glow}) {
-  const heightSpan = heightAtMax - heightAtMin;
-  const run = axis === 'x' ? w : d; // flat, ground-projected footprint length (matches the collider's AABB)
-  const rise = Math.abs(heightSpan);
-  const slopeLength = Math.hypot(run, rise); // the ramp SURFACE's actual (hypotenuse) length
-  const angle = Math.atan2(rise, run);
-  const sinA = Math.sin(angle), cosA = Math.cos(angle);
-
-  // axis='x' → normal tilts in the XY plane; axis='z' → normal tilts in the YZ plane.
-  const normal = axis === 'x'
-    ? new THREE.Vector3(-Math.sign(heightSpan) * sinA, cosA, 0).normalize()
-    : new THREE.Vector3(0, cosA, -Math.sign(heightSpan) * sinA).normalize();
-
-  colliders.push({
-    ramp: true,
-    minX: x - w / 2, maxX: x + w / 2,
-    minZ: z - d / 2, maxZ: z + d / 2,
-    minY: Math.min(heightAtMin, heightAtMax), maxY: Math.max(heightAtMin, heightAtMax),
-    heightAtMin, heightAtMax,
-    axis, normal
+// Each ramp is a real plane, banked across X and graded along Z. Gravity pulls the
+// player down the bank while retained forward momentum carries them through the course.
+function addSurfPlane(world, colliders, shotBlockers, {x, z, width, length, centerY, bank, grade, color, edgeColor}) {
+  const hx = width / 2, hz = length / 2;
+  const height = (px, pz) => centerY + bank * (px - x) + grade * (pz - z);
+  const points = [
+    [x - hx, height(x - hx, z - hz), z - hz],
+    [x + hx, height(x + hx, z - hz), z - hz],
+    [x - hx, height(x - hx, z + hz), z + hz],
+    [x + hx, height(x + hx, z + hz), z + hz]
+  ];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+  geometry.setIndex([0, 2, 1, 2, 3, 1]);
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({
+    color, roughness: .32, metalness: .48, side: THREE.DoubleSide,
+    emissive: new THREE.Color(color).multiplyScalar(.055)
   });
-
-  // Surfable surface: a THIN slab sized to the slope's hypotenuse (not the flat run —
-  // a box sized to the flat footprint and then rotated no longer reaches from one end
-  // to the other; it foreshortens). Rotating this thin, correctly-sized slab makes its
-  // footprint project back down to exactly the flat run, matching the collider above.
-  const thickness = .3;
-  const centerH = (heightAtMin + heightAtMax) / 2;
-  const geo = axis === 'x' ? new THREE.BoxGeometry(slopeLength, thickness, d) : new THREE.BoxGeometry(w, thickness, slopeLength);
-  const surfMat = new THREE.MeshStandardMaterial({color, roughness: .45, metalness: .35});
-  const mesh = new THREE.Mesh(geo, surfMat);
-  mesh.position.set(x, centerH, z);
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = mesh.receiveShadow = true;
-  if (axis === 'z') mesh.rotation.x = -Math.sign(heightSpan) * angle;
-  else mesh.rotation.z = Math.sign(heightSpan) * angle;
   world.add(mesh);
   shotBlockers.push(mesh);
-
-  // Glowing edge strips along the surfable edges — the visual "stay between these" cue.
-  // Same hypotenuse-length correction, offset along the slab's own local axes so they
-  // ride flush with the (already-rotated) surface instead of being rotated separately.
-  const edgeMat = new THREE.MeshBasicMaterial({color: glow || 0x00ffcc});
-  if (axis === 'z') {
-    for (const side of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(.15, .15, slopeLength), edgeMat);
-      strip.position.set(x + side * (w / 2) + normal.x * .06, centerH + normal.y * .06, z + normal.z * .06);
-      strip.rotation.x = mesh.rotation.x;
-      world.add(strip);
-    }
-  } else {
-    for (const side of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(slopeLength, .15, .15), edgeMat);
-      strip.position.set(x + normal.x * .06, centerH + normal.y * .06, z + side * (d / 2) + normal.z * .06);
-      strip.rotation.z = mesh.rotation.z;
-      world.add(strip);
-    }
+  const ys = points.map(p => p[1]);
+  colliders.push({
+    ramp: true, minX: x - hx, maxX: x + hx, minZ: z - hz, maxZ: z + hz,
+    minY: Math.min(...ys), maxY: Math.max(...ys), centerX: x, centerZ: z,
+    centerY, slopeX: bank, slopeZ: grade,
+    normal: new THREE.Vector3(-bank, 1, -grade).normalize()
+  });
+  const edgeMaterial = new THREE.LineBasicMaterial({color: edgeColor});
+  for (const side of [-1, 1]) {
+    const px = x + side * hx;
+    const edge = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(px, height(px, z - hz) + .05, z - hz),
+      new THREE.Vector3(px, height(px, z + hz) + .05, z + hz)
+    ]);
+    world.add(new THREE.Line(edge, edgeMaterial));
   }
   return mesh;
 }
 
-// Side rail: tall thin wall keeping the player from sliding off the ramp sideways.
-function addRail(world, colliders, mat, {x, y, z, sx, sy, sz, color}) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat(color));
-  mesh.position.set(x, y, z);
-  mesh.castShadow = mesh.receiveShadow = true;
-  world.add(mesh);
-  colliders.push({minX: x - sx / 2, maxX: x + sx / 2, minY: y - sy / 2, maxY: y + sy / 2, minZ: z - sz / 2, maxZ: z + sz / 2});
-  return mesh;
+function addGate(group, x, y, z, color) {
+  const material = new THREE.MeshBasicMaterial({color});
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(5.5, .16, 8, 32), material);
+  ring.position.set(x, y, z);
+  ring.rotation.y = Math.PI / 2;
+  group.add(ring);
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(.22, 8, .22), material);
+    post.position.set(x + side * 5.5, y - 4, z);
+    group.add(post);
+  }
 }
 
-export function buildSurfMap({world, colliders, shotBlockers, mat, ladders = []}) {
-  const solid = new THREE.Group();
-  const decor = new THREE.Group();
-  world.add(solid, decor);
-
-  const glow = 0x00ffcc;
-  const colors = {start: 0x2a5f8a, ramp: 0x1a7a6a, rail: 0x2f4a52, floor: 0x0d151c};
-
+export function buildSurfMap({world, colliders, shotBlockers, mat}) {
+  const course = new THREE.Group(), decor = new THREE.Group();
+  course.name = 'surf-course';
+  decor.name = 'surf-decor';
+  world.add(course, decor);
+  const palette = {void:0x07111d,platform:0x172f49,ramp:0x168c92,alt:0x245ab4,edge:0x4affdf,hot:0xff4fc8};
   const block = (x, y, z, sx, sy, sz, color) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat(color));
     mesh.position.set(x, y, z);
     mesh.castShadow = mesh.receiveShadow = true;
-    solid.add(mesh);
-    colliders.push({minX: x - sx / 2, maxX: x + sx / 2, minY: y - sy / 2, maxY: y + sy / 2, minZ: z - sz / 2, maxZ: z + sz / 2});
+    course.add(mesh);
+    colliders.push({minX:x-sx/2,maxX:x+sx/2,minY:y-sy/2,maxY:y+sy/2,minZ:z-sz/2,maxZ:z+sz/2});
+    shotBlockers.push(mesh);
     return mesh;
   };
+  const platform = (x, y, z, width = 15, depth = 8) => block(x, y - .25, z, width, .5, depth, palette.platform);
+  const pair = ({x, z, length, centerY, grade, width = 7.5, color = palette.ramp}) => {
+    addSurfPlane(course, colliders, shotBlockers, {x:x-width/2,z,width,length,centerY:centerY-4,bank:1.05,grade,color,edgeColor:palette.edge});
+    addSurfPlane(course, colliders, shotBlockers, {x:x+width/2,z,width,length,centerY:centerY-4,bank:-1.05,grade,color,edgeColor:palette.edge});
+  };
 
-  // Void floor, well below the ramp's exit — falling off resets you back to the start
-  // (see the OOB check in game.js). There is no finish line: the run just loops.
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(360, 460), mat(colors.floor));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, SURF_FLOOR_Y, 89);
-  solid.add(ground);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(180, 310), new THREE.MeshStandardMaterial({color:palette.void,roughness:.9,metalness:.1}));
+  floor.rotation.x = -Math.PI/2;
+  floor.position.set(0, SURF_FLOOR_Y, 95);
+  floor.receiveShadow = true;
+  decor.add(floor);
 
-  const RAMP_W = 12, RAMP_LEN = 190, TOP_Y = 41, BOTTOM_Y = TOP_Y - RAMP_LEN * 0.5; // 26.57° — a simple, forgiving beginner slope.
+  platform(0,45.3,-23,18,10);
+  pair({x:0,z:14,length:56,centerY:34,grade:-.12,width:8,color:palette.ramp});
+  platform(0,23.5,48,13,7);
+  pair({x:7,z:79,length:50,centerY:27,grade:-.15,width:7.5,color:palette.alt});
+  platform(7,16.5,108,12,7);
+  pair({x:-6,z:137,length:48,centerY:19,grade:-.14,width:7,color:palette.ramp});
+  platform(-6,8.5,166,11,7);
+  pair({x:0,z:190,length:42,centerY:11,grade:-.12,width:6.5,color:palette.alt});
+  platform(0,2.5,217,18,12);
 
-  // ── Start platform — flat ground, walk/jump onto the ramp's near edge. ──
-  block(0, TOP_Y - 0.25, -6, RAMP_W, 0.5, 10, colors.start);
-
-  // ── One continuous ramp, start to finish. Strafe left/right to gain speed. ──
-  addRamp(world, colliders, shotBlockers, mat, {
-    x: 0, z: 94, w: RAMP_W, d: RAMP_LEN, axis: 'z',
-    heightAtMin: TOP_Y, heightAtMax: BOTTOM_Y, color: colors.ramp, glow
-  });
-
-  // ── Side rails spanning the full run, start platform through the ramp's exit. ──
-  const railCenterY = (TOP_Y + 6 + BOTTOM_Y - 6) / 2, railHeight = (TOP_Y + 6) - (BOTTOM_Y - 6);
-  const railCenterZ = (-11 + 189) / 2, railLength = 189 - (-11);
-  for (const side of [-1, 1]) {
-    addRail(world, colliders, mat, {
-      x: side * (RAMP_W / 2 + 0.5), y: railCenterY, z: railCenterZ,
-      sx: 1, sy: railHeight, sz: railLength, color: colors.rail
-    });
-  }
-
-  // ── Progress pillars every 40 units — a simple visual pace-check down the ramp. ──
-  for (let z = 20; z < RAMP_LEN - 10; z += 40) {
-    const y = TOP_Y - z * 0.5;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat(glow));
-    m.position.set(0, y + 3, z);
-    decor.add(m);
-  }
-
-  // ── Backdrop pillars for depth, flanking the whole corridor. ──
-  for (let z = 0; z < RAMP_LEN; z += 45) {
-    const y = TOP_Y - z * 0.5;
-    for (const side of [-1, 1]) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(3, 90, 3), mat(0x14212c));
-      p.position.set(side * 22, y - 20, z);
-      decor.add(p);
+  addGate(decor,0,27,48,palette.hot);
+  addGate(decor,7,20,108,palette.hot);
+  addGate(decor,-6,12,166,palette.hot);
+  addGate(decor,0,8,216,0xffd84a);
+  for (let z = -5; z <= 220; z += 25) {
+    for (const side of [-1,1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(.7,54,.7),mat(0x10243a));
+      post.position.set(side*25,-4,z);
+      decor.add(post);
+      const light = new THREE.Mesh(new THREE.BoxGeometry(.82,.18,4.5),new THREE.MeshBasicMaterial({color:side>0?palette.hot:palette.edge}));
+      light.position.set(side*25,22,z);
+      decor.add(light);
     }
   }
-
-  solid.traverse(m => { if (m.isMesh) shotBlockers.push(m); });
+  const finish = new THREE.Mesh(new THREE.PlaneGeometry(16,5),new THREE.MeshBasicMaterial({color:0xffd84a,transparent:true,opacity:.24,side:THREE.DoubleSide}));
+  finish.position.set(0,5.05,SURF_FINISH_Z);
+  finish.rotation.x=-Math.PI/2;
+  decor.add(finish);
   world.updateMatrixWorld(true);
 }
