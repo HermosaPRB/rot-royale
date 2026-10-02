@@ -67,7 +67,7 @@ const state = {
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,map:'neon',arsenal:{},pickups:[],lootNoticeUntil:0,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
   pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,emoteUntil:0,emoteYaw:0,emoteEquipment:'gun',
-  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0,slideUntil:0,slideCooldown:0,onRamp:false,surfStart:0,surfCheckpoint:0,surfBest:Infinity,
+  meleeStart:-Infinity,lastMelee:-Infinity,reloadStart:0,aiming:false,aimProgress:0,aimBlend:0,equipped:'gun',headshotAt:-Infinity,fireHeld:false,respawnAt:0,slideUntil:0,slideCooldown:0,onRamp:false,jumpQueued:false,surfStart:0,surfCheckpoint:0,surfBest:Infinity,
   switchStart:-Infinity,switchPending:null,switchSwapped:false,inspectStart:-Infinity
 };
 
@@ -148,7 +148,8 @@ function updateFeel(dt,now){
   updateTargetCard(now);if(now>=eliminationUntil)$('elimination-banner').classList.remove('show');
   const reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   $('speed-lines').classList.toggle('active',isPlaying()&&!state.aiming&&!reduced&&Math.hypot(state.velocityX,state.velocityZ)>17);
-  slideView=THREE.MathUtils.lerp(slideView,isPlaying()&&state.slideUntil>now ? .42 : 0,1-Math.exp(-16*dt));landingKick*=Math.exp(-14*dt);shotShake*=Math.exp(-23*dt);
+  const sliding=isPlaying()&&state.slideUntil>now;
+  slideView=THREE.MathUtils.lerp(slideView,sliding?.54:0,1-Math.exp(-(sliding?14:10)*dt));landingKick*=Math.exp(-14*dt);shotShake*=Math.exp(-23*dt);
   const gap=state.selectedWeapon==='shotgun'?1.55:state.selectedWeapon==='smg'?1.15:1;$('crosshair').style.transform=`translate(-50%,-50%) scale(${gap+weaponMotion.kick*.12})`;
 }
 function renderGameplay(now){
@@ -351,7 +352,7 @@ function syncMeshes(dt=1/60){
     const distance=teleport?0:Math.hypot(dx,dz)*blend,y=Math.max(0,(p.y??1.7)-1.7);
     m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
     const yaw=p.yaw||0,turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
-    const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);
+    const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);u.slide=damp(u.slide||0,p.sliding&&p.grounded!==false?1:0,p.sliding?19:11);
     u.stride=(u.stride||0)+distance*(5.7+Math.min(3,u.speed*.18));
     const avatar=u.avatar,elapsed=now-(meleeVisuals.get(p.id)??-Infinity),swing=elapsed>=0&&elapsed<MELEE.duration&&p.alive!==false;
     const holding=p.equipped==='bat';u.gun.visible=!swing&&!holding;u.bat.visible=swing||holding;
@@ -360,18 +361,18 @@ function syncMeshes(dt=1/60){
     m.rotation.x=damp(m.rotation.x,reaction?.killed?Math.PI/2*deathT:hitPitch,reaction?.killed?10:22);m.rotation.z=damp(m.rotation.z,reaction?.killed?0:Math.sin(flinch*Math.PI)*.045-turnLean-moveLean,15);
     if(reaction?.killed)m.position.y=y-.6*deathT;
     if(u.wasGround===false&&p.grounded!==false)u.landAt=now;u.wasGround=p.grounded;
-    const landAge=now-(u.landAt??-Infinity),landing=landAge<260?Math.sin(Math.min(1,landAge/260)*Math.PI):0,slideTarget=p.sliding?.78:1;
-    m.scale.y=damp(m.scale.y,slideTarget-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
+    const landAge=now-(u.landAt??-Infinity),landing=landAge<260?Math.sin(Math.min(1,landAge/260)*Math.PI):0,slide=u.slide;
+    m.scale.y=damp(m.scale.y,1-slide*.05-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
     // Breathing, recoil and footfalls use damped values so low-rate network snapshots never pop.
     const step=Math.sin(u.stride),lift=Math.sin(now*.002+p.id.length)*.006+Math.abs(step)*.017*u.walk-landing*.055;
     const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*.085:0;
     if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
-    u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:0,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:0,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
+    u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05-slide*.18,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:-slide*.12,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.10,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
-    if(avatar){avatar.position.y=damp(avatar.position.y,lift,20);
-      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,0,12);torso.position.y=damp(torso.position.y,.75,12);torso.position.z=damp(torso.position.z,0,12);torso.rotation.x=damp(torso.rotation.x,0,12);torso.rotation.y=damp(torso.rotation.y,0,12);torso.rotation.z=damp(torso.rotation.z,0,12)}
-      avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045),18)});
-      avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk;let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
+    if(avatar){avatar.position.y=damp(avatar.position.y,lift-slide*.22,20);
+      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,0,12);torso.position.y=damp(torso.position.y,.75-slide*.18,16);torso.position.z=damp(torso.position.z,-slide*.12,16);torso.rotation.x=damp(torso.rotation.x,-slide*.54,16);torso.rotation.y=damp(torso.rotation.y,0,12);torso.rotation.z=damp(torso.rotation.z,0,12)}
+      avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air)*(1-slide),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12)+slide*(i?.82:-.66);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045)+slide*(i?-.11:.11),18)});
+      avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk*(1-slide);let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}targetX+=slide*(i?-.26:.42);targetZ+=slide*(i?-.10:.12);arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
     }
     poseEmote(m,p);
   });
@@ -481,7 +482,7 @@ function resetSurfRun(full=false,announce=true){
   const checkpoint=!full&&state.surfCheckpoint>0?SURF_CHECKPOINTS[state.surfCheckpoint-1]:null;
   const spawn=checkpoint?.spawn||SURF_SPAWN;
   camera.position.set(...spawn);camera.rotation.set(0,Math.PI,0);
-  state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.hopChain=0;state.keys={};
+  state.velocityX=state.velocityY=state.velocityZ=0;state.onGround=true;state.onRamp=false;state.jumpQueued=false;state.hopChain=0;state.keys={};
   if(full){state.surfCheckpoint=0;state.surfStart=Date.now();if(announce)toast('Surf run restarted')}
   else if(announce)toast(checkpoint?`Stage ${state.surfCheckpoint+1} checkpoint`:'Back to start');
 }
@@ -649,11 +650,11 @@ function updateCombatVisuals(now){
   const holding=state.equipped==='bat';meleeModel.visible=holding&&state.alive;weaponModel.visible=!holding&&state.alive;
   if(swing){const arc=t<.18?-smoothStep(t/.18)*.18:t<.55?-.18+smoothStep((t-.18)/.37)*1.18:1-smoothStep((t-.55)/.45);meleeModel.position.set(.48-arc*.78,-.55+arc*.12,-.65-arc*.15);meleeModel.rotation.set(-.45+arc*.6,-arc*.25,-.7+arc*1.8)}
   else{meleeModel.position.set(.47,-.51+Math.sin(now*.003)*.012,-.70);meleeModel.rotation.set(-.25,0,-.36)}
-  meleeModel.position.y-=dip*.85;meleeModel.rotation.x-=dip*.55;
+  meleeModel.position.y-=dip*.85+slideView*.22;meleeModel.rotation.x-=dip*.55;meleeModel.rotation.z-=slideView*.16;
   if(state.map==='surf')$('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;
   else if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase();
   else if(switching)$('weapon-name').textContent=(state.switchPending==='bat'?meleeLabel():weaponStats(state.selectedWeapon).name.toUpperCase())+'…';
-  $('melee-status').textContent=state.map==='surf'?'A / D + MOUSE · R RESTART':switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
+  $('melee-status').textContent=state.map==='surf'?'A / D + MOUSE · TAP JUMP · R RESTART':switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
 }
 function toggleBat(){
   const now=performance.now();
@@ -669,6 +670,21 @@ function inspectWeapon(){
   state.inspectStart=now;state.fireHeld=false;tone(320,.05,.015,'sine',0,260);
 }
 function smoothStep(t){t=THREE.MathUtils.clamp(t,0,1);return t*t*(3-2*t)}
+function updateAimAssist(dt){
+  if(state.map==='surf'||!state.aiming||state.aimBlend<.28||state.equipped!=='gun'||!isPlaying()||state.reloading)return;
+  const forward=new THREE.Vector3();camera.getWorldDirection(forward);
+  const cone=THREE.MathUtils.degToRad({sniper:3.2,ar:4.8,smg:5.8,shotgun:6.5}[state.selectedWeapon]||4.5),minimum=Math.cos(cone),origin=camera.position,best={score:minimum,target:null};
+  for(const p of Object.values(state.players)){
+    if(p.id===state.id||p.alive===false)continue;
+    const point=new THREE.Vector3(p.x,(p.y??1.7)-.30,p.z),offset=point.clone().sub(origin),distance=offset.length();if(distance<.1||distance>weaponStats(state.selectedWeapon).range)continue;
+    const dot=offset.normalize().dot(forward),score=dot-distance*.00008;if(dot>minimum&&score>best.score&&hasClearShot(origin,point)){best.score=score;best.target=point}
+  }
+  if(!best.target)return;
+  const direction=best.target.sub(origin).normalize(),desiredYaw=Math.atan2(-direction.x,-direction.z),desiredPitch=Math.asin(clamp(direction.y,-1,1));
+  const yawDelta=Math.atan2(Math.sin(desiredYaw-camera.rotation.y),Math.cos(desiredYaw-camera.rotation.y)),pitchDelta=desiredPitch-camera.rotation.x;
+  const magnet=clamp((best.score-minimum)/(1-minimum),0,1)*state.aimBlend,rate=state.selectedWeapon==='sniper'?1.25:1.7,step=Math.min(.055,dt*rate)*magnet;
+  camera.rotation.y+=yawDelta*step;camera.rotation.x=clamp(camera.rotation.x+pitchDelta*step,-1.45,1.45);camera.rotation.z=0;
+}
 function updateAim(dt){
   const profile=AIM_PROFILES[state.selectedWeapon],now=performance.now(),inspecting=now-state.inspectStart<INSPECT_DURATION;
   const target=state.aiming&&state.equipped!=='bat'&&isPlaying()&&!state.reloading&&!inspecting&&now-state.meleeStart>=MELEE.duration&&now-state.switchStart>=SWITCH_DURATION;
@@ -676,11 +692,12 @@ function updateAim(dt){
   state.aimProgress=clamp(state.aimProgress+(target?dt/profile.raise:-dt/profile.lower),0,1);state.aimBlend=smoothStep(state.aimProgress);
   const fov=THREE.MathUtils.lerp(76,profile.fov,state.aimBlend);
   if(Math.abs(camera.fov-fov)>.001){camera.fov=fov;camera.updateProjectionMatrix()}
+  updateAimAssist(dt);
   controls.pointerSpeed=0;
   const scoped=state.selectedWeapon==='sniper'&&state.aimBlend>.78;
   $('scope-overlay').hidden=!scoped;$('scope-overlay').style.opacity=String(smoothStep((state.aimBlend-.78)/.22));
   $('crosshair').style.opacity=String(1-smoothStep(state.aimBlend/.7));
-  $('aim-status').textContent=state.equipped==='bat'?'50 DAMAGE':inspecting?'INSPECTING':state.aimBlend>.1?profile.label:'SHIFT / RMB · AIM · I INSPECT';
+  $('aim-status').textContent=state.equipped==='bat'?'50 DAMAGE':inspecting?'INSPECTING':state.aimBlend>.1?profile.label+' · SOFT ASSIST':'SHIFT / RMB · AIM · I INSPECT';
 }
 function aimSensitivity(){return state.aimBlend?Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/Math.tan(THREE.MathUtils.degToRad(38)):1}
 function resetAim(){
@@ -712,8 +729,9 @@ function updateWeaponMotion(dt,now){
   rig.rotation.y=.20*free+inspect*1.2;rig.rotation.x=-inspect*.42;
   rig.position.y+=inspect*.06;rig.position.x+=inspect>0?Math.sin(inspectT*Math.PI*4)*.02*inspect:0;
   rig.visible=!(state.selectedWeapon==='sniper'&&aim>.78);
-  weaponModel.position.set((bob*.012*m.walk-m.swayX)*free,(-Math.abs(Math.cos(m.phase))*.010*m.walk+breath)*free-.12*tilt-m.dip*.85,.085*m.kick+.10*tilt);
-  weaponModel.rotation.set(profile.kick*m.kick+m.swayY*free-.24*tilt+m.dip*.55,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt);
+  const slide=clamp(slideView/.54,0,1);
+  weaponModel.position.set((bob*.012*m.walk*(1-slide)-m.swayX)*free,(-Math.abs(Math.cos(m.phase))*.010*m.walk*(1-slide)+breath)*free-.12*tilt-m.dip*.85-slide*.16,.085*m.kick+.10*tilt);
+  weaponModel.rotation.set(profile.kick*m.kick+m.swayY*free-.24*tilt+m.dip*.55+slide*.075,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt-slide*.14);
   rig.userData.support.position.set(-.10*mag,-.16*mag,.16*mag);
   rig.userData.gun.userData.magazine.position.y=1.36-.23*mag;
   const since=(now-state.lastShot)/1000,action=rig.userData.gun.userData.action;
@@ -734,9 +752,11 @@ function updateMovement(dt){
   const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(),wish=forward.multiplyScalar(forwardInput).addScaledVector(right,sideInput),moving=wish.lengthSq()>0;wish.normalize();
   const previousSpeed=Math.hypot(state.velocityX,state.velocityZ);
   state.landingGrace=Math.max(0,(state.landingGrace||0)-dt);
-  if(state.slideUntil>performance.now()&&state.onGround&&!state.keys.Space){
+  const now=performance.now();
+  if(state.slideUntil>now&&state.onGround&&!state.keys.Space){
     const speed=previousSpeed*Math.exp(-.4*dt),steer=moving?1-Math.exp(-1.6*dt):0;state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.01){state.velocityX*=speed/length;state.velocityZ*=speed/length}moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);updateVerticalMovement(dt);return;
   }
+  if(state.slideUntil&&state.slideUntil<=now&&state.onGround){state.landingGrace=Math.max(state.landingGrace,.22);state.slideUntil=0}
   if(state.keys.Space||!state.onGround)state.slideUntil=0;
   // ── CS:GO-style surf: player is ALWAYS AIRBORNE on the ramp surface ──
   // Gravity pulls down; ramp tangent projection converts it into slope-parallel speed.
@@ -767,6 +787,12 @@ function updateMovement(dt){
     // Reproject onto tangent after air-accel.
     const vn2=state.velocityX*nx+state.velocityY*ny+state.velocityZ*nz;
     state.velocityX-=vn2*nx;state.velocityY-=vn2*ny;state.velocityZ-=vn2*nz;
+    // A fresh jump press launches from the bank. Holding jump from the start deck does
+    // not repeat, so players can intentionally jump gaps without accidental pogoing.
+    if(state.jumpQueued){
+      state.jumpQueued=false;state.velocityY=Math.max(9,state.velocityY+6);state.velocityX+=nx*2;state.velocityZ+=nz*2;state.onGround=false;state.onRamp=false;
+      moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);updateVerticalMovement(dt);return;
+    }
     // Move horizontally (ramp colliders are skipped by swept-axis collision).
     // Holding jump is intentionally ignored while attached so a start jump does not
     // instantly bounce the player off the first bank.
@@ -789,9 +815,10 @@ function updateMovement(dt){
     return;
   }
   if(state.onGround&&!state.onRamp){
-    const jumping=!!state.keys.Space,walk=8.5*movementSpeed(),speed=moving&&jumping?Math.max(11*movementSpeed(),previousSpeed)+(state.hopChain>0?2.6:0):moving&&state.landingGrace>0?Math.max(walk,previousSpeed):walk;
-    state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed;
-    if(jumping){state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
+    const jumping=!!state.keys.Space,walk=8.5*movementSpeed(),speed=moving&&jumping?Math.max(11*movementSpeed(),previousSpeed)+(state.hopChain>0?2.6:0):walk;
+    if(!jumping&&state.landingGrace>0&&previousSpeed>walk){const steer=1-Math.exp(-5*dt),drag=Math.exp(-1.1*dt);state.velocityX=THREE.MathUtils.lerp(state.velocityX*drag,moving?wish.x*walk:0,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ*drag,moving?wish.z*walk:0,steer)}
+    else{state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed}
+    if(jumping){state.jumpQueued=false;state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
     // Source-style AirAccelerate for normal airborne movement.
     const AIR_ACCEL=state.map==='surf'?7.5:2.2,AIR_MAX_WISHSPEED=state.map==='surf'?18:1.2;
@@ -1046,7 +1073,7 @@ function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function leaveToHome(message=''){state.matchActive=false;state.practice=false;clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
-function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
+function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.jumpQueued=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto';$('capture-mouse').hidden=!isPlaying()||controls.isLocked}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='MOUSE CAPTURE BLOCKED · OPEN THIS URL IN CHROME / EDGE FOR UNLIMITED MOUSE LOOK · ← / → ALSO TURN';$('control-hint').classList.remove('hidden')}
@@ -1088,7 +1115,8 @@ function remapKeyboardEvent(e){
     return;
   }
   if(e.type==='keydown'&&state.mode==='settings'&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSettings();return}
-  const mapped=canonicalCode(e.code);if(mapped!==e.code)try{Object.defineProperty(e,'code',{value:mapped})}catch{}
+  const mapped=canonicalCode(e.code);if(e.type==='keydown'&&mapped==='Space'&&!e.repeat&&isPlaying())state.jumpQueued=true;
+  if(mapped!==e.code)try{Object.defineProperty(e,'code',{value:mapped})}catch{}
 }
 addEventListener('keydown',remapKeyboardEvent,true);addEventListener('keyup',remapKeyboardEvent,true);
 addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
@@ -1109,7 +1137,7 @@ function updateLobbyModeUI(){
   $('practice').querySelector('span').textContent=surf?'Start Surfing':'Practice';
   $('practice').querySelector('small').textContent=surf?'Four-stage skill course · no combat':'Play against bots';
   $('match-badge').innerHTML=surf?'Solo <span>CS-style surf</span>':'Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · steer with mouse · R restarts':'Most eliminations wins. Respawn and keep playing.';
+  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':'Most eliminations wins. Respawn and keep playing.';
   $('win-rule').textContent=surf?'Reach the gold finish gate. Falling returns you to the latest checkpoint.':'Most eliminations in 3 minutes wins.';
 }
 renderKeybinds();buildChoices();initWorld();showScreen('home');
