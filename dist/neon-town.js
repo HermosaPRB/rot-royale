@@ -17,6 +17,9 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
   for(const z of [-15,15])block(0,.025,z,36,.04,2,0xc9d3d3,false,true);
   // Readable circuit-grid road markings, no dynamic lights or post-processing.
   for(let z=-12;z<=12;z+=4){block(0,.04,z,26,.018,.06,glow,false,true);for(const x of [-12,-6,6,12])block(x,.04,z+1,.06,.018,1.8,glow,false,true)}
+  // Low-profile lane seams and curb insets make the street feel less like one flat slab.
+  for(const x of [-14,14])for(let z=-24;z<=24;z+=6)block(x,.052,z,.09,.018,2.3,0xe8d7a7,false,true);
+  for(const z of [-15,15])for(let x=-14;x<=14;x+=4)block(x,.052,z,2.6,.018,.07,0x8eaaa9,false,true);
   for(const z of [-20,20]){
     const side=Math.sign(z),accent=side<0?palette.orange:palette.blue,front=z-side*5;
     // Ground floor is genuinely traversable, with front/rear doors and a side garage opening.
@@ -32,6 +35,13 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
     for(let i=0;i<16;i++){const height=(i+1)*.25,stepZ=stairStart+side*(i+.5)*run/16;
       block(7.6,height/2,stepZ,2.8,height,run/16,palette.white);colliders.at(-1).stair=true;
       block(7.6,height+.009,stepZ-side*.20,2.75,.018,.055,glow,false,true);
+      block(7.6,height-.055,stepZ+side*.225,2.68,.09,.035,palette.dark,false,true);
+    }
+    // Enclose the flight's flanks. The upper landing stays open at the rear.
+    for(const x of [6.06,9.14]){
+      block(x,1.85,z,.24,3.7,run,palette.dark);
+      block(x,3.73,z,.30,.08,run,accent,false,true);
+      for(let i=0;i<4;i++)block(x+(x<7?.13:-.13),1.02+i*.74,z,.025,.035,run-.4,0x7693a3,false,true);
     }
     // Open upper room with a broad, unglazed street-facing firing window.
     block(-10,5.5,z,.45,3,10,accent);block(10,5.5,z,.45,3,10,accent);block(0,5.5,z+side*5,20,3,.4,accent);
@@ -39,6 +49,9 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
     block(0,4.4,front,6.4,.8,.4,palette.white);block(0,6.8,front,6.4,.4,.4,palette.white);
     for(const x of [-3.25,3.25])block(x,5.7,front-side*.05,.12,1.8,.15,glow,false,true);
     block(0,4.83,front-side*.15,6.7,.10,.6,palette.dark);
+    for(const x of [-8.2,-4.9,4.9,8.2])block(x,5.56,front-side*.25,.08,2.32,.07,palette.white,false,true);
+    block(0,3.58,front-side*.75,5.6,.10,1.15,palette.dark,false,true);
+    for(const x of [-2.8,2.8])block(x,2.04,front-side*.27,.13,2.8,.15,accent,false,true);
     // Guard the stairwell edge; the rear landing remains open.
     block(5.85,4.48,z-side*.15,.12,.96,7.1,palette.dark);
     // Roof has a real 3×3 hatch, with a ladder rising through it.
@@ -60,6 +73,7 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
     block(-24,.65,z,5,1.3,2,accent);block(-24,1.45,z,4.6,.35,1.7,0x3d6741);
     // Geometric roof solar panels and house number placards.
     for(let i=0;i<3;i++)block(-1+i*3,7.36,z,2.4,.08,3,palette.glass,false,true);
+    for(const x of [-6,5.5]){block(x,7.5,z+side*1.5,1.5,.42,1.1,palette.dark,false,true);block(x,7.73,z+side*1.5,1.6,.06,1.2,palette.white,false,true)}
     block(6.6,2.1,front-side*.24,1.5,.75,.08,palette.dark,false,true);
     for(let i=0;i<(side<0?1:2);i++)block(6.3+i*.5,2.1,front-side*.30,.16,.47,.03,glow,false,true);
   }
