@@ -475,7 +475,8 @@ function updateLobby(){
 function startMatch(){
   if(!state.host)return;
   state.matchEnd=state.map==='surf'?Infinity:Date.now()+180000;state.arsenal={};
-  Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...(state.map==='surf'?{x:SURF_SPAWN[0],y:SURF_SPAWN[1],z:SURF_SPAWN[2]}:spawnFor(i))}));
+  const slots=MAPS[state.map].spawns.map((_,i)=>i);for(let i=slots.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]]}
+  Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...(state.map==='surf'?{x:SURF_SPAWN[0],y:SURF_SPAWN[1],z:SURF_SPAWN[2]}:spawnFor(slots[i%slots.length]))}));
   resetPickups();broadcast({t:'start',end:state.matchEnd,players:state.players,map:state.map,pickups:state.pickups});beginMatch(true)
 }
 function beginMatch(asHost){
@@ -494,7 +495,7 @@ function beginMatch(asHost){
 function practice(){
   state.practice=true;state.host=true;state.room='SOLO';state.id='solo';state.players={};seedSelf();
   if(state.map==='surf'){startMatch();return}
-  botBrains.clear();for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bonker Bot','Neegy.exe','Caffè Hunter'][i],char:CHARACTERS[i%2].id,weapon:Object.keys(WEAPONS)[i+1],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()
+  botBrains.clear();const botWeapons=Object.keys(WEAPONS);for(let i=botWeapons.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[botWeapons[i],botWeapons[j]]=[botWeapons[j],botWeapons[i]]}for(let i=0;i<3;i++){const id=`bot${i}`;state.players[id]={id,name:['Bonker Bot','Neegy.exe','Caffè Hunter'][i],char:CHARACTERS[i%2].id,weapon:botWeapons[i],kills:0,deaths:0,health:100,alive:true,...spawnFor(i+1),bot:true}}startMatch()
 }
 
 function resetSurfRun(full=false,announce=true){
@@ -1038,34 +1039,122 @@ function updateClimbing(dt){
   if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0}
 }
 function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
+function makeBotBrain(p,i,now){
+  const skill=.82+Math.random()*.46;
+  return{skill,wob:{sniper:.008,ar:.016,smg:.02,shotgun:.026}[p.weapon]||.018,tau:(.045+Math.random()*.06)/skill,react:(160+Math.random()*220)/skill,turnTrack:2.4*skill,turnFlick:7.5*skill,strafeDir:i%2?1:-1,strafeActive:true,nextSense:0,nextShot:now+400+Math.random()*400,nextHop:now+1400+Math.random()*1600,nextSlide:now+3500+Math.random()*3000,slideUntil:0,burstLeft:2+Math.floor(Math.random()*6),burstUntil:0,ammo:WEAPONS[p.weapon].mag,vx:0,vz:0,stuck:0,targetId:null,visible:false,lastSeenAt:-Infinity,lastX:p.x,lastZ:p.z,engagedAt:now,aimX:p.x,aimY:1.45,aimZ:p.z,wobT:Math.random()*9,wobFY:2+Math.random()*2.6,wobPY:Math.random()*6.3,wobFP:1.3+Math.random()*1.7,wobPP:Math.random()*6.3,strafeUntil:0,commitAt:0,goalX:p.x,goalZ:p.z,goalUntil:0,pauseUntil:0,lookYaw:0,detour:0,detourUntil:0,reloadUntil:0,prevTX:null,prevTZ:null,prevAt:0,tSpeed:0,rangeNow:16}
+}
 function updateBots(dt){
-  if(!state.practice||!state.matchActive||state.map==='surf')return;const now=performance.now(),players=Object.values(state.players),bots=players.filter(p=>p.bot&&p.alive);
+  if(!state.practice||!state.matchActive||state.map==='surf')return;
+  const now=performance.now(),players=Object.values(state.players),bots=players.filter(p=>p.bot&&p.alive);
   for(const [i,p] of bots.entries()){
-    let b=botBrains.get(p.id);if(!b){b={strafe:i%2?1:-1,nextThink:0,nextShot:now+500+i*180,nextHop:now+1200+i*350,ammo:WEAPONS[p.weapon].mag,vx:0,vz:0,stuck:0,targetId:null,aimYaw:0,aimPitch:0};botBrains.set(p.id,b)}
+    let b=botBrains.get(p.id);if(!b){b=makeBotBrain(p,i,now);botBrains.set(p.id,b)}
     const w=weaponStats(p.weapon,p.arsenal||{});
-    if(now>=b.nextThink){
-      const candidates=players.filter(q=>q.id!==p.id&&q.alive!==false),eye=new THREE.Vector3(p.x,p.y??1.7,p.z);let best=null,bestScore=Infinity;
-      for(const q of candidates){const point=new THREE.Vector3(q.x,(q.y??1.7)-.25,q.z),distance=eye.distanceTo(point),visible=hasClearShot(eye,point),score=distance+(visible?0:10)+(q.id===b.targetId?-5:0)+(q.id===state.id?-1.5:0);if(score<bestScore){best=q;bestScore=score}}
-      if(best?.id!==b.targetId){b.targetId=best?.id;b.acquireAt=now+280+Math.random()*240}
-      b.strafe=Math.random()<.24?-b.strafe:b.strafe;b.noiseYaw=(Math.random()-.5)*({sniper:.030,ar:.055,smg:.080,shotgun:.105}[p.weapon]||.06);b.noisePitch=(Math.random()-.5)*({sniper:.022,ar:.040,smg:.055,shotgun:.075}[p.weapon]||.04);b.nextThink=now+180+Math.random()*130;
+    p.equipped='gun';p.sliding=now<(b.slideUntil||0);
+    const eye=new THREE.Vector3(p.x,(p.y??1.7)-(p.sliding?.42:0),p.z);
+    if(p.reloading){if(now>=b.reloadUntil){p.reloading=false;b.ammo=w.mag}}else if(b.ammo<=0){p.reloading=true;b.reloadUntil=now+w.reload;b.burstUntil=now+w.reload+120}
+    // Sight is honest: only players actually in line of sight are acquired; a lost target is remembered for 1.7s.
+    if(now>=b.nextSense){
+      b.nextSense=now+90+Math.random()*70;
+      if(b.targetId&&state.players[b.targetId]?.alive===false)b.targetId=null;
+      let best=null,bestScore=Infinity;
+      for(const q of players){
+        if(q.id===p.id||q.alive===false)continue;
+        const point=new THREE.Vector3(q.x,(q.y??1.7)-.25,q.z),d=eye.distanceTo(point);
+        if(!hasClearShot(eye,point))continue;
+        const score=d+(q.id===b.targetId?-6:0)+(q.id===state.id?-1.5:0);
+        if(score<bestScore){best=q;bestScore=score}
+      }
+      if(best){
+        if(best.id!==b.targetId){b.prevTX=null;b.prevTZ=null;b.prevAt=0;b.tSpeed=0}
+        if(best.id!==b.targetId||!b.visible){b.targetId=best.id;b.engagedAt=now;b.aimX=best.x;b.aimY=(best.y??1.7)-.25;b.aimZ=best.z}
+        if(b.prevTX!==null&&now>b.prevAt)b.tSpeed=Math.hypot(best.x-b.prevTX,best.z-b.prevTZ)/((now-b.prevAt)/1000);
+        b.prevTX=best.x;b.prevTZ=best.z;b.prevAt=now;
+        b.lastSeenAt=now;b.lastX=best.x;b.lastZ=best.z;b.visible=true;
+      }else{b.visible=false;if(b.targetId&&now-b.lastSeenAt>1700)b.targetId=null}
     }
-    if(p.reloading){if(now>=b.reloadUntil){p.reloading=false;b.ammo=w.mag}}else if(b.ammo<=0){p.reloading=true;b.reloadUntil=now+w.reload}
-    const target=state.players[b.targetId];if(!target||target.alive===false)continue;
-    const dx=target.x-p.x,dz=target.z-p.z,distance=Math.max(.01,Math.hypot(dx,dz)),eye=new THREE.Vector3(p.x,p.y??1.7,p.z),targetPoint=new THREE.Vector3(target.x,(target.y??1.7)-.25,target.z),visible=hasClearShot(eye,targetPoint);
-    const desiredYaw=Math.atan2(-dx,-dz),desiredPitch=Math.atan2(targetPoint.y-eye.y,distance),yawNoise=visible?b.noiseYaw:0,pitchNoise=visible?b.noisePitch:0;
-    b.aimYaw+=(yawNoise-b.aimYaw)*(1-Math.exp(-5*dt));b.aimPitch+=(pitchNoise-b.aimPitch)*(1-Math.exp(-5*dt));const aimYaw=desiredYaw+b.aimYaw,turn=Math.atan2(Math.sin(aimYaw-(p.yaw||0)),Math.cos(aimYaw-(p.yaw||0))),turnStep=(p.weapon==='sniper'?2.4:3.4)*dt;p.yaw=(p.yaw||0)+clamp(turn,-turnStep,turnStep);p.pitch=THREE.MathUtils.lerp(p.pitch||0,desiredPitch+b.aimPitch,1-Math.exp(-7*dt));
-    p.aiming=visible&&(p.weapon==='sniper'||p.weapon==='ar'&&distance>18);p.equipped='gun';
-    let goalX=target.x,goalZ=target.z,healing=false;if(p.health<58){const health=state.pickups.filter(x=>x.kind==='health'&&Date.now()>=x.readyAt).sort((a,c)=>Math.hypot(p.x-a.x,p.z-a.z)-Math.hypot(p.x-c.x,p.z-c.z))[0];if(health){goalX=health.x;goalZ=health.z;healing=true}}
-    const gx=goalX-p.x,gz=goalZ-p.z,goalDistance=Math.max(.01,Math.hypot(gx,gz)),desiredRange={shotgun:7,smg:12,ar:19,sniper:29}[p.weapon]||16,radial=healing||!visible||distance>desiredRange+3?1:distance<desiredRange-3?-1:0,strafe=healing?0:b.strafe*(visible?.82:.25),moveX=gx/goalDistance*radial+gz/goalDistance*strafe,moveZ=gz/goalDistance*radial-gx/goalDistance*strafe,moveLength=Math.max(.01,Math.hypot(moveX,moveZ)),speed=(healing?5.8:p.weapon==='sniper'?4.2:5.1);
-    let wishX=moveX/moveLength*speed,wishZ=moveZ/moveLength*speed;for(const q of bots)if(q!==p){const ox=p.x-q.x,oz=p.z-q.z,d=Math.hypot(ox,oz);if(d<1.6&&d>.01){wishX+=ox/d*(1.6-d)*3;wishZ+=oz/d*(1.6-d)*3}}
-    b.vx=THREE.MathUtils.lerp(b.vx,wishX,1-Math.exp(-7*dt));b.vz=THREE.MathUtils.lerp(b.vz,wishZ,1-Math.exp(-7*dt));const attempts=[[b.vx,b.vz],[b.vz,-b.vx],[-b.vz,b.vx],[-b.vx,-b.vz]];let moved=false;
-    for(const [vx,vz] of attempts){const nx=clamp(p.x+vx*dt,-31.5,31.5),nz=clamp(p.z+vz*dt,-31.5,31.5);if(!collides(nx,nz)){p.x=nx;p.z=nz;moved=true;break}}
-    b.stuck=moved?Math.max(0,b.stuck-dt*2):b.stuck+dt;if(b.stuck>.28){b.strafe*=-1;b.vx*=-.5;b.vz*=-.5;b.stuck=0;b.jumpStart=now;b.jumpUntil=now+650}
-    if(now>b.nextHop&&visible&&distance<24){b.nextHop=now+1700+Math.random()*1800;if(Math.random()<.46){b.jumpStart=now;b.jumpUntil=now+650}}
+    const target=b.targetId?state.players[b.targetId]:null;
+    let wishX=0,wishZ=0,speed=0,aimErr=Infinity,canShoot=false,fightHop=false;
+    if(target&&target.alive!==false){
+      const dx=target.x-p.x,dz=target.z-p.z,distance=Math.max(.01,Math.hypot(dx,dz));
+      const rangeBase={shotgun:7,smg:12,ar:19,sniper:29}[p.weapon]||16;
+      let goalX=b.goalX,goalZ=b.goalZ,healing=false;
+      if(p.health<58){const health=state.pickups.filter(x=>x.kind==='health'&&Date.now()>=x.readyAt).sort((a,c)=>Math.hypot(p.x-a.x,p.z-a.z)-Math.hypot(p.x-c.x,p.z-c.z))[0];if(health){goalX=health.x;goalZ=health.z;healing=true}}
+      if(healing)speed=5.9;
+      else if(!b.visible){goalX=b.lastX;goalZ=b.lastZ;speed=5.5}
+      else{
+        // Commit to a flanking spot around the target for ~1s instead of orbiting on rails.
+        if(now>=b.commitAt){
+          b.rangeNow=rangeBase*(.82+Math.random()*.4);
+          const off=(Math.random()<.5?-1:1)*(.45+Math.random()*.85),bearing=Math.atan2(dx,dz);
+          b.goalX=target.x+Math.sin(bearing+off)*b.rangeNow;
+          b.goalZ=target.z+Math.cos(bearing+off)*b.rangeNow;
+          b.commitAt=now+650+Math.random()*750;
+          if(Math.random()<.3)b.strafeDir*=-1;
+        }
+        goalX=b.goalX;goalZ=b.goalZ;
+        if(now>=b.strafeUntil){const r=Math.random();if(r<.32)b.strafeDir*=-1;b.strafeActive=r>=.32&&r<.44?false:true;b.strafeUntil=now+240+Math.random()*430}
+        speed=p.weapon==='sniper'?4.3:5.1;
+        if(distance>rangeBase+6)speed=5.5;
+        if(p.reloading)speed=4.5;
+        if(!p.reloading&&distance>12&&distance<26&&p.grounded!==false&&now>=b.nextSlide){b.slideUntil=now+520;b.nextSlide=now+5000+Math.random()*3500;p.sliding=true;speed=6.4}
+      }
+      const gx=goalX-p.x,gz=goalZ-p.z,gd=Math.max(.01,Math.hypot(gx,gz));
+      let mx=gx/gd,mz=gz/gd;
+      if(b.visible&&!healing){const s=(b.strafeActive?b.strafeDir:0)*.82;mx+=gz/gd*s;mz-=gx/gd*s}
+      wishX=mx;wishZ=mz;fightHop=b.visible&&distance<24;canShoot=b.visible&&distance<w.range;
+      // Human aim: the aim point lags a moving target, the crosshair wobbles, flicks are fast and tracking is slow.
+      const lagK=1-Math.exp(-dt/b.tau),ax=b.visible?target.x:b.lastX,az=b.visible?target.z:b.lastZ,ay=b.visible?((target.y??1.7)-.25):1.45;
+      b.aimX+=(ax-b.aimX)*lagK;b.aimY+=(ay-b.aimY)*lagK;b.aimZ+=(az-b.aimZ)*lagK;
+      const tdx=b.aimX-p.x,tdz=b.aimZ-p.z,td=Math.max(.01,Math.hypot(tdx,tdz));
+      const wobS=b.wob*(1+td/34)*(b.tSpeed>2.2?1.35:1);b.wobT+=dt;
+      const wobYaw=Math.sin(b.wobT*b.wobFY+b.wobPY)*wobS,wobPitch=Math.sin(b.wobT*b.wobFP+b.wobPP)*wobS*.7;
+      const desiredYaw=Math.atan2(-tdx,-tdz),desiredPitch=Math.atan2(b.aimY-eye.y,td);
+      const yawErr=Math.atan2(Math.sin(desiredYaw+wobYaw-(p.yaw||0)),Math.cos(desiredYaw+wobYaw-(p.yaw||0)));
+      const rate=Math.abs(yawErr)>.55?b.turnFlick:b.turnTrack;
+      p.yaw=(p.yaw||0)+clamp(yawErr,-rate*dt,rate*dt);
+      const pitchGoal=desiredPitch+wobPitch;
+      p.pitch=THREE.MathUtils.lerp(p.pitch||0,pitchGoal,1-Math.exp(-4.2*dt));
+      p.aiming=b.visible&&(p.weapon==='sniper'||p.weapon==='ar'&&td>18);
+      aimErr=Math.hypot(yawErr,pitchGoal-(p.pitch||0));
+    }else{
+      // No target: wander to fresh goals, pause to look around, hop while traveling.
+      p.aiming=false;
+      if(now>=b.goalUntil||Math.hypot(b.goalX-p.x,b.goalZ-p.z)<1.8){
+        for(let t=0;t<8;t++){const hx=(Math.random()*2-1)*27,hz=(Math.random()*2-1)*27;if(!collides(hx,hz)){b.goalX=hx;b.goalZ=hz;break}}
+        b.goalUntil=now+2600+Math.random()*3200;
+        b.pauseUntil=Math.random()<.35?now+450+Math.random()*700:0;
+        b.lookYaw=(Math.random()*2-1)*Math.PI;
+      }
+      const gx=b.goalX-p.x,gz=b.goalZ-p.z,gd=Math.max(.01,Math.hypot(gx,gz));
+      if(now<b.pauseUntil){
+        const err=Math.atan2(Math.sin(b.lookYaw-(p.yaw||0)),Math.cos(b.lookYaw-(p.yaw||0)));
+        p.yaw=(p.yaw||0)+clamp(err,-1.6*dt,1.6*dt);
+      }else{wishX=gx/gd;wishZ=gz/gd;speed=4.4}
+      if(speed&&gd>7&&now>=b.nextHop){b.nextHop=now+900+Math.random()*1400;if(Math.random()<.55){b.jumpStart=now;b.jumpUntil=now+650}}
+      p.pitch=THREE.MathUtils.lerp(p.pitch||0,0,1-Math.exp(-3*dt));
+    }
+    if(speed){
+      let wx=wishX,wz=wishZ;
+      const len=Math.max(.001,Math.hypot(wx,wz));wx=wx/len*speed;wz=wz/len*speed;
+      // Hold a detour for half a second so the bot rounds corners instead of wall-sliding frame by frame.
+      if(now<b.detourUntil){const s=b.detour,px=-wz*s,pz=wx*s;wx=wx*.4+px*.75;wz=wz*.4+pz*.75}
+      for(const q of bots)if(q!==p){const ox=p.x-q.x,oz=p.z-q.z,d=Math.hypot(ox,oz);if(d<1.6&&d>.01){wx+=ox/d*(1.6-d)*3;wz+=oz/d*(1.6-d)*3}}
+      b.vx=THREE.MathUtils.lerp(b.vx,wx,1-Math.exp(-7*dt));b.vz=THREE.MathUtils.lerp(b.vz,wz,1-Math.exp(-7*dt));
+      const attempts=[[b.vx,b.vz],[b.vz,-b.vx],[-b.vz,b.vx],[-b.vx,-b.vz]];let moved=false;
+      for(const [vx,vz] of attempts){const nx=clamp(p.x+vx*dt,-31.5,31.5),nz=clamp(p.z+vz*dt,-31.5,31.5);if(!collides(nx,nz)){p.x=nx;p.z=nz;moved=true;break}}
+      b.stuck=moved?Math.max(0,b.stuck-dt*2):b.stuck+dt;
+      if(b.stuck>.3){b.detour=Math.random()<.5?1:-1;b.detourUntil=now+500+Math.random()*500;b.stuck=0;if(Math.random()<.6){b.jumpStart=now;b.jumpUntil=now+650}}
+    }else{b.vx*=.8;b.vz*=.8;b.stuck=0}
+    if(fightHop&&now>=b.nextHop){b.nextHop=now+1700+Math.random()*1800;if(Math.random()<.46){b.jumpStart=now;b.jumpUntil=now+650}}
     if(now<(b.jumpUntil||0)){const t=(now-b.jumpStart)/650;p.y=1.7+Math.sin(Math.max(0,Math.min(1,t))*Math.PI)*1.05;p.grounded=false}else{p.y=1.7;p.grounded=true}
-    if(!p.reloading){
-      const aimError=Math.hypot(Math.atan2(Math.sin(desiredYaw-p.yaw),Math.cos(desiredYaw-p.yaw)),desiredPitch-p.pitch),tolerance={shotgun:.16,smg:.085,ar:.060,sniper:.032}[p.weapon]||.07;
-      if(visible&&distance<w.range&&now>=b.acquireAt&&now>=b.nextShot&&aimError<tolerance){resolveShot(p.id,now);b.ammo--;const burstGap=w.rate*(w.automatic?.95+Math.random()*.28:1.05+Math.random()*.18);b.nextShot=now+burstGap;if(w.automatic&&Math.random()<.12)b.nextShot+=180+Math.random()*220}
+    if(canShoot&&!p.reloading){
+      const tolerance={shotgun:.16,smg:.085,ar:.060,sniper:.032}[p.weapon]||.07;
+      if(now>=b.engagedAt+b.react*(p.weapon==='sniper'?1.7:1)&&now>=b.burstUntil&&now>=b.nextShot&&aimErr<tolerance){
+        resolveShot(p.id,now);b.ammo--;
+        b.nextShot=now+w.rate*(w.automatic?.95+Math.random()*.28:1.05+Math.random()*.18);
+        if(w.automatic){if(--b.burstLeft<=0){b.burstLeft=2+Math.floor(Math.random()*7);b.burstUntil=now+200+Math.random()*480}}
+        else if(Math.random()<.3)b.burstUntil=now+240+Math.random()*400;
+      }
     }
   }
 }
