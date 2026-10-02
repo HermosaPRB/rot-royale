@@ -88,6 +88,7 @@ const BUILD_LIFETIME=30000;
 let audioContext,soundMuted=false,eliminationUntil=0,landingKick=0,shotShake=0,slideView=0,targetCheckAt=0,damageSerial=0;
 const remoteShotTimes=new Map();
 const botBrains=new Map();
+let lastLeaderboardSignature='';
 let audioMaster,audioLimiter,reloadSoundStage=0;
 const soundBuffers=new Map(),soundVoices=new Set();
 function unlockAudio(){try{const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return;if(!audioContext){audioContext=new Audio();audioMaster=audioContext.createGain();audioMaster.gain.value=.65;audioLimiter=audioContext.createDynamicsCompressor();audioLimiter.threshold.value=-10;audioLimiter.knee.value=8;audioLimiter.ratio.value=8;audioLimiter.attack.value=.003;audioLimiter.release.value=.12;audioMaster.connect(audioLimiter);audioLimiter.connect(audioContext.destination);for(const type of ['ar','smg','shotgun','sniper','magout','magin','bolt'])for(let variant=0;variant<3;variant++)makeSoundBuffer(type,variant)}if(audioContext.state==='suspended')audioContext.resume().catch(()=>{})}catch{}}
@@ -702,16 +703,18 @@ function smoothStep(t){t=THREE.MathUtils.clamp(t,0,1);return t*t*(3-2*t)}
 function updateAimAssist(dt){
   if(state.map==='surf'||!state.aiming||state.aimBlend<.28||state.equipped!=='gun'||!isPlaying()||state.reloading)return;
   const forward=new THREE.Vector3();camera.getWorldDirection(forward);
-  const cone=THREE.MathUtils.degToRad({sniper:3.2,ar:4.8,smg:5.8,shotgun:6.5}[state.selectedWeapon]||4.5),minimum=Math.cos(cone),origin=camera.position,best={score:minimum,target:null};
+  const cone=THREE.MathUtils.degToRad({sniper:4.5,ar:6.5,smg:7.5,shotgun:8}[state.selectedWeapon]||6),minimum=Math.cos(cone),origin=camera.position,best={score:-Infinity,dot:0,target:null};
   for(const p of Object.values(state.players)){
     if(p.id===state.id||p.alive===false)continue;
     const point=new THREE.Vector3(p.x,(p.y??1.7)-.30,p.z),offset=point.clone().sub(origin),distance=offset.length();if(distance<.1||distance>weaponStats(state.selectedWeapon).range)continue;
-    const dot=offset.normalize().dot(forward),score=dot-distance*.00008;if(dot>minimum&&score>best.score&&hasClearShot(origin,point)){best.score=score;best.target=point}
+    const dot=offset.normalize().dot(forward),score=dot-distance*.000002;
+    if(dot>minimum&&score>best.score&&hasClearShot(origin,point)){best.score=score;best.dot=dot;best.target=point}
   }
   if(!best.target)return;
   const direction=best.target.sub(origin).normalize(),desiredYaw=Math.atan2(-direction.x,-direction.z),desiredPitch=Math.asin(clamp(direction.y,-1,1));
   const yawDelta=Math.atan2(Math.sin(desiredYaw-camera.rotation.y),Math.cos(desiredYaw-camera.rotation.y)),pitchDelta=desiredPitch-camera.rotation.x;
-  const magnet=clamp((best.score-minimum)/(1-minimum),0,1)*state.aimBlend,rate=state.selectedWeapon==='sniper'?1.25:1.7,step=Math.min(.055,dt*rate)*magnet;
+  const closeness=clamp((best.dot-minimum)/(1-minimum),0,1),magnet=(.34+.66*smoothStep(closeness))*state.aimBlend;
+  const rate=state.selectedWeapon==='sniper'?3.8:5,step=(1-Math.exp(-rate*dt))*magnet;
   camera.rotation.y+=yawDelta*step;camera.rotation.x=clamp(camera.rotation.x+pitchDelta*step,-1.45,1.45);camera.rotation.z=0;
 }
 function updateAim(dt){
@@ -726,7 +729,7 @@ function updateAim(dt){
   const scoped=state.selectedWeapon==='sniper'&&state.aimBlend>.78;
   $('scope-overlay').hidden=!scoped;$('scope-overlay').style.opacity=String(smoothStep((state.aimBlend-.78)/.22));
   $('crosshair').style.opacity=String(1-smoothStep(state.aimBlend/.7));
-  $('aim-status').textContent=state.equipped==='bat'?'50 DAMAGE':inspecting?'INSPECTING':state.aimBlend>.1?profile.label+' · SOFT ASSIST':'SHIFT / RMB · AIM · I INSPECT';
+  $('aim-status').textContent=state.equipped==='bat'?'50 DAMAGE':inspecting?'INSPECTING':state.aimBlend>.1?profile.label+' · AIM MAGNET':'SHIFT / RMB · AIM · I INSPECT';
 }
 function aimSensitivity(){return state.aimBlend?Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/Math.tan(THREE.MathUtils.degToRad(38)):1}
 function resetAim(){
@@ -1174,17 +1177,27 @@ function updateTimer(){
 function finishMatch(players){if(!state.matchActive)return;state.matchActive=false;controls.unlock();$('hud').classList.remove('active');const ranked=Object.values(players||state.players).sort((a,b)=>(b.kills||0)-(a.kills||0));$('podium').innerHTML=ranked.map((p,i)=>`<div class="rank-row"><span>#${i+1}</span><span>${escapeHtml(p.name)}</span><strong>${p.kills||0} K</strong></div>`).join('');showScreen('results');state.mode='results';if(state.host)broadcast({t:'end',players:state.players})}
 function returnLobby(){if(state.practice){leaveToHome();return}Object.values(state.players).forEach(p=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true}));if(state.host)broadcast({t:'lobby',players:state.players});enterLobby()}
 
+function updateLeaderboard(){
+  const ranked=Object.values(state.players).sort((a,b)=>(b.kills||0)-(a.kills||0)||(a.deaths||0)-(b.deaths||0)||String(a.name||'').localeCompare(String(b.name||'')));
+  const signature=JSON.stringify(ranked.map(p=>[p.id,p.name,p.kills,p.deaths,state.id]));
+  if(signature===lastLeaderboardSignature)return;
+  lastLeaderboardSignature=signature;
+  const shown=ranked.slice(0,4),me=ranked.find(p=>p.id===state.id);
+  if(me&&!shown.includes(me))shown.push(me);
+  $('leaderboard-rows').innerHTML=shown.map(p=>`<div class="leaderboard-row${p.id===state.id?' me':''}"><span class="leaderboard-rank">${ranked.indexOf(p)+1}</span><span class="leaderboard-name">${escapeHtml(p.name||'Player')}</span><span class="leaderboard-score">${p.kills||0}</span></div>`).join('');
+}
 function updateHud(){
   if(state.map==='surf'){
     // Hide combat HUD, show speed and time.
+    $('leaderboard').style.display='none';$('total-kills-label').textContent='STAGE';$('timer-label').textContent='RUN TIME';
     $('ammo-readout').style.display='none';$('weapon-rarity').textContent='';$('weapon-name').textContent='SURF';$('aim-status').textContent='';$('melee-status').textContent='';
     $('health-number').textContent=Math.round(Math.hypot(state.velocityX,state.velocityZ)*10)/10;$('health-bar').style.width='100%';
-    const elapsed=state.matchActive&&state.surfStart?Math.floor((Date.now()-state.surfStart)/1000):0;
-    $('kills').textContent=`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
-    $('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;$('leader').textContent=Math.round(Math.hypot(state.velocityX,state.velocityZ)*10)/10;
+    $('kills').textContent=`${state.surfCheckpoint+1}/4`;
+    $('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;
     return;
   }
-  const me=state.players[state.id];if(me){state.kills=me.kills||state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';const top=Math.max(0,...Object.values(state.players).map(p=>p.kills||0));$('leader').textContent=top
+  $('leaderboard').style.display='';$('total-kills-label').textContent='TOTAL KILLS';$('timer-label').textContent='TIME LEFT';
+  const me=state.players[state.id];if(me){state.kills=me.kills??state.kills;state.health=me.health??state.health}$('kills').textContent=state.kills;$('health-number').textContent=Math.ceil(state.health);$('health-bar').style.width=`${state.health}%`;$('ammo').textContent=state.ammo;$('reserve').textContent='∞';$('ammo-readout').style.display=state.equipped==='bat'?'none':'';updateLeaderboard()
 }
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
