@@ -7,10 +7,12 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
   if(!['ar','shotgun','sniper','smg'].includes(type))type='ar';
   const key=`${color}:${type}:${detailed}:${rarity}`;
   if(!gunTemplates.has(key)){
-    const g=new THREE.Group(),paint=new THREE.MeshStandardMaterial({color,roughness:.38,metalness:.22}),
-      metal=new THREE.MeshStandardMaterial({color:0x40515b,roughness:.38,metalness:.3}),
-      trim=new THREE.MeshStandardMaterial({color:0x91a3aa,roughness:.3,metalness:.4}),
-      brass=new THREE.MeshStandardMaterial({color:0xffce72,roughness:.36,metalness:.4});
+    const g=new THREE.Group(),paint=new THREE.MeshStandardMaterial({color,roughness:.34,metalness:.32}),
+      metal=new THREE.MeshStandardMaterial({color:0x28333b,roughness:.42,metalness:.55}),
+      trim=new THREE.MeshStandardMaterial({color:0x75858d,roughness:.32,metalness:.55}),
+      brass=new THREE.MeshStandardMaterial({color:0xcba45d,roughness:.35,metalness:.55}),
+      grip=new THREE.MeshStandardMaterial({color:0x20262b,roughness:.78,metalness:.05}),
+      glow=new THREE.MeshBasicMaterial({color:type==='ar'?0xffa43f:type==='shotgun'?0xffcf72:type==='sniper'?0x56e5ef:0xff5aa9});
     const box=(x,y,z,w,h,d,m,bevel=false,parent=g)=>{
       let geometry;
       if(bevel){const s=new THREE.Shape(),r=.009;s.moveTo(-w/2+r,-h/2+r);s.lineTo(w/2-r,-h/2+r);s.lineTo(w/2-r,h/2-r);s.lineTo(-w/2+r,h/2-r);s.closePath();geometry=new THREE.ExtrudeGeometry(s,{depth:d-2*r,bevelEnabled:true,bevelSegments:1,steps:1,bevelSize:r,bevelThickness:r});geometry.translate(0,0,-d/2+r)}else geometry=new THREE.BoxGeometry(w,h,d);
@@ -28,6 +30,22 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
       box(.12,1.423,-.44,.141,.07,.25,paint,true);
       tube(.12,1.49,-.78,.028,.86,metal);tip=-1.20;
       box(.12,1.483,-.79,.125,.14,.43,paint,true);
+      // Orange free-float handguard, recessed cooling slots and continuous black rail.
+      box(.12,1.559,-.67,.13,.023,.86,metal);
+      for(const x of [.047,.193])for(let i=0;i<(detailed?5:3);i++){
+        box(x,1.49,-.66-i*(detailed?.12:.2),.009,.026,.077,grip);
+      }
+      box(.12,1.476,-.36,.15,.15,.30,paint,true);
+      box(.203,1.49,-.37,.008,.048,.105,grip);
+      box(.209,1.49,-.34,.01,.023,.048,trim);
+      box(.204,1.425,-.44,.011,.016,.083,brass);
+      // Open triangular stock and a rubber butt pad keep the AR silhouette unmistakable.
+      for(const x of [.055,.185]){
+        box(x,1.49,.095,.024,.035,.38,paint);
+        box(x,1.397,.165,.023,.025,.19,metal).rotation.x=-.42;
+      }
+      box(.12,1.47,.288,.15,.22,.037,paint,true);
+      box(.12,1.47,.314,.17,.24,.029,grip);
       for(let i=0;i<(detailed?8:5);i++){const z=-.62-i*(detailed?.047:.085);box(.186,1.493,z,.006,.04,.024,metal);box(.054,1.493,z,.006,.04,.024,metal)}
       tube(.12,1.475,-.11,.034,.31,metal);
       profile([[.06,1.53],[-.18,1.53],[-.19,1.47],[-.03,1.39],[.055,1.31]],.10,paint);
@@ -35,27 +53,48 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
       box(0,-.035,0,.078,.15,.13,metal,true,magazine).rotation.x=-.12;
       box(0,-.15,.029,.078,.105,.128,metal,true,magazine).rotation.x=-.35;
       box(0,-.21,.052,.087,.025,.14,trim,false,magazine);
+      box(.048,-.115,.053,.006,.15,.018,glow,false,magazine);
+      box(.197,1.368,-.33,.011,.15,.058,grip);
+      box(.12,1.49,-1.166,.075,.044,.08,metal);
       sightY=1.625;sightZ=-.37;
     }else if(compact){
       box(.12,1.49,-.43,.15,.19,.30,metal,true);
       box(.12,1.54,-.45,.157,.06,.29,paint,true);
+      box(.12,1.567,-.47,.15,.018,.37,metal);
+      for(const x of [.038,.202]){
+        box(x,1.49,-.41,.012,.135,.35,paint,true);
+        for(let i=0;i<(detailed?4:2);i++)box(x+(x>.12?.008:-.008),1.51,-.51-i*(detailed?.055:.10),.008,.021,.036,grip);
+      }
+      box(.205,1.49,-.34,.009,.07,.085,grip);
+      box(.211,1.488,-.36,.012,.015,.058,glow);
       tube(.12,1.49,-.66,.063,.23,metal);tip=-.875;
       tube(.12,1.49,-.82,.026,.15,metal);
       for(let i=0;i<4;i++)tube(.12,1.49,-.59-i*.046,.067,.013,paint);
       // Folding wire stock and straight magazine through the grip read as a compact SMG.
-      for(const x of [.065,.175])box(x,1.48,-.08,.018,.025,.31,trim);
-      box(.12,1.445,.073,.13,.13,.025,metal,true);
-      box(.03,-.10,.006,.062,.27,.083,metal,true,magazine);box(.03,-.239,.006,.071,.025,.093,trim,false,magazine);
+      for(const x of [.065,.175])box(x,1.48,-.025,.019,.024,.39,paint);
+      box(.12,1.45,.19,.13,.19,.029,paint,true);
+      box(.12,1.45,.22,.15,.21,.024,grip);
+      box(.03,-.10,.006,.062,.27,.083,metal,true,magazine);box(.03,-.239,.006,.071,.025,.093,brass,false,magazine);
+      box(.069,-.125,.013,.006,.17,.024,glow,false,magazine);
+      box(.17,1.37,-.34,.055,.16,.068,grip,true);
       sightY=1.632;sightZ=-.37;
     }else if(pump){
       tube(.12,1.49,-.445,.067,.33,metal);box(.12,1.437,-.44,.12,.065,.28,metal,true);
       profile([[.08,1.53],[-.26,1.47],[-.32,1.40],[-.22,1.37],[.06,1.24],[.09,1.25]],.10,paint);
+      for(const x of [.047,.193])box(x,1.493,-.39,.011,.10,.28,paint,true);
+      box(.203,1.49,-.405,.008,.041,.10,grip);
+      box(.205,1.513,-.44,.01,.018,.063,glow);
       box(.12,1.386,.095,.11,.275,.03,metal,true);
+      box(.12,1.46,.245,.15,.22,.035,paint,true);
+      box(.12,1.45,.271,.17,.24,.027,grip);
+      for(const x of [.065,.175])box(x,1.47,.09,.018,.055,.30,paint);
       // One long barrel with a shorter magazine tube underneath.
       tube(.12,1.50,-.98,.034,.85,metal);tip=-1.405;
       tube(.12,1.418,-.845,.029,.58,metal);
-      tube(.12,1.442,-.71,.059,.24,paint,action);
-      for(let i=0;i<7;i++)tube(.12,1.442,-.61-i*.034,.063,.012,metal,action);
+      tube(.12,1.442,-.71,.059,.24,brass,action);
+      for(let i=0;i<(detailed?7:4);i++)tube(.12,1.442,-.61-i*(detailed?.034:.058),.063,.012,grip,action);
+      tube(.12,1.418,-1.14,.039,.04,brass);
+      box(.12,1.515,-1.325,.08,.054,.08,metal);
       box(.12,1.538,-.91,.022,.013,.69,trim);
       for(let i=0;i<4;i++)tube(.204,1.473,-.34-i*.047,.015,.035,brass);
       sightY=1.561;sightZ=-.40;
@@ -63,18 +102,29 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
     }else{
       tube(.12,1.49,-.46,.051,.40,metal);
       profile([[.08,1.53],[-.20,1.49],[-.37,1.405],[-.86,1.435],[-.91,1.375],[-.42,1.345],[-.25,1.35],[.07,1.26]],.105,paint);
+      // Skeleton precision stock, raised cheek rest and vented teal chassis.
+      box(.12,1.54,.17,.16,.044,.28,paint,true);
+      box(.12,1.44,.305,.16,.205,.033,paint,true);
+      box(.12,1.43,.336,.17,.22,.027,grip);
+      for(const x of [.05,.19])box(x,1.365,.13,.02,.024,.35,metal).rotation.x=-.33;
+      for(const x of [.062,.178])for(let i=0;i<(detailed?4:2);i++)box(x,1.46,-.54-i*(detailed?.085:.17),.012,.028,.055,grip);
+      box(.12,1.377,-.63,.11,.033,.44,metal);
+      box(.205,1.484,-.43,.009,.026,.075,glow);
       box(.12,1.397,.09,.12,.27,.036,metal,true);
       tube(.12,1.50,-1.15,.024,1.10,metal);tip=-1.70;
+      tube(.12,1.50,-1.60,.043,.13,metal);
+      box(.12,1.50,-1.665,.087,.058,.076,metal);
       box(0,-.018,0,.075,.092,.105,metal,true,magazine);
       // Large objective bell, slender scope tube, turrets and a working bolt handle.
       box(.12,1.595,-.40,.05,.105,.055,metal);box(.12,1.595,-.67,.05,.105,.055,metal);
       tube(.12,1.675,-.54,.042,.37,metal);tube(.12,1.675,-.80,.080,.15,metal);tube(.12,1.675,-.32,.059,.09,metal);
-      const lens=new THREE.MeshStandardMaterial({color:0x73b8c5,emissive:0x153c45,emissiveIntensity:.3,roughness:.2,metalness:.15});tube(.12,1.675,-.273,.046,.003,lens);tube(.12,1.675,-.877,.065,.003,lens);
+      const lens=new THREE.MeshStandardMaterial({color:0x73e4ed,emissive:0x176b77,emissiveIntensity:.5,roughness:.16,metalness:.15});tube(.12,1.675,-.273,.046,.003,lens);tube(.12,1.675,-.877,.065,.003,lens);
+      tube(.12,1.675,-.86,.082,.014,glow);
       box(.12,1.741,-.53,.057,.064,.057,metal,true);box(.182,1.678,-.53,.061,.05,.052,trim,true);
       box(.21,1.487,-.30,.13,.019,.019,trim,false,action);const bolt=new THREE.Mesh(new THREE.SphereGeometry(.027,8,6),metal);bolt.position.set(.28,1.477,-.30);action.add(bolt);
       sightY=1.675;sightZ=-.30;
     }
-    box(.15,1.365,-.34,.074,.18,.083,metal,true).rotation.x=.14;
+    box(.15,1.365,-.34,.074,.18,.083,grip,true).rotation.x=.14;
     // Open trigger guard, not a solid block around the trigger hand.
     box(.15,1.32,-.405,.024,.018,.095,trim);box(.15,1.365,-.445,.024,.09,.018,trim);
     box(.15,1.408,-.395,.019,.049,.015,brass).rotation.x=-.3;
@@ -91,12 +141,12 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
     if(detailed){
       if(!pump&&!long)for(let i=0;i<(compact?4:9);i++)box(.12,sightY-.038,-.45-i*.04,.057,.014,.009,trim);
       for(const z of [-.34,-.53]){const screw=new THREE.Mesh(new THREE.CylinderGeometry(.009,.009,.009,6),trim);screw.rotation.z=Math.PI/2;screw.position.set(.206,1.47,z);g.add(screw)}
-      // Espresso-gold receiver inlay; no extra texture or draw call.
+      // Small fasteners and an accent stripe are batched into existing materials.
       box(.192,1.46,-.465,.007,.013,.058,brass);
     }
     if(rarity){
       // Cyber armor leaves the original sight line and animation pivots unobstructed.
-      paint.color.setHex(0x233349);paint.metalness=.65;
+      paint.metalness=.6;
       const energy=new THREE.MeshBasicMaterial({color}),armor=new THREE.MeshStandardMaterial({color:0x8095a7,roughness:.3,metalness:.65});
       for(const x of [.027,.213]){box(x,1.47,-.49,.035,.14,.27,armor,true);box(x+(x>.12?.02:-.02),1.48,-.49,.012,.028,.23,energy)}
       const coilStart=type==='sniper'?-1.10:type==='shotgun'?-.93:type==='smg'?-.66:-.77;
