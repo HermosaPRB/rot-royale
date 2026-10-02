@@ -150,7 +150,7 @@ function updateFeel(dt,now){
   $('speed-lines').classList.toggle('active',isPlaying()&&!state.aiming&&!reduced&&Math.hypot(state.velocityX,state.velocityZ)>17);
   const sliding=isPlaying()&&state.slideUntil>now;
   slideView=THREE.MathUtils.lerp(slideView,sliding?.54:0,1-Math.exp(-(sliding?14:10)*dt));landingKick*=Math.exp(-14*dt);shotShake*=Math.exp(-23*dt);
-  const gap=state.selectedWeapon==='shotgun'?1.55:state.selectedWeapon==='smg'?1.15:1;$('crosshair').style.transform=`translate(-50%,-50%) scale(${gap+weaponMotion.kick*.12})`;
+  const gap=state.selectedWeapon==='shotgun'?1.55:state.selectedWeapon==='smg'?1.15:1;$('crosshair').style.transform=`translate(-50%,-50%) scale(${gap+weaponMotion.kick*.12+localHeat(now)*28})`;
 }
 function renderGameplay(now){
   const view=gameplayCamera();if(view!==camera||!isPlaying()){renderer.render(scene,view);return}
@@ -160,13 +160,33 @@ function renderGameplay(now){
 }
 state.buildHeld=false;state.lastBuildAttempt=-Infinity;state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
 const ghostMaterial=new THREE.MeshBasicMaterial({color:0x55efb4,transparent:true,opacity:.35,depthWrite:false});
-const weaponMotion={kick:0,walk:0,phase:0,yaw:null,pitch:null,swayX:0,swayY:0,dip:0,aimKick:0,aimWas:false};
+const weaponMotion={kick:0,walk:0,phase:0,yaw:null,pitch:null,swayX:0,swayY:0,dip:0,aimKick:0,aimWas:false,roll:0,flashSpin:0};
 const AIM_PROFILES={
   ar:{fov:58,raise:.20,lower:.14,kick:.052,settle:17,label:'IRON SIGHTS'},
   smg:{fov:64,raise:.13,lower:.11,kick:.035,settle:22,label:'QUICK SIGHTS'},
   shotgun:{fov:68,raise:.24,lower:.16,kick:.09,settle:12,label:'BEAD SIGHT'},
   sniper:{fov:22,raise:.34,lower:.17,kick:.075,settle:10,label:'4× SCOPE'}
 };
+// Per-gun identity. pitch/yaw: camera punch per shot (rad); recover: return speed once you stop firing;
+// bloom: spread added per sustained shot (host-authoritative); back/rise/roll/jitter: viewmodel motion.
+const WEAPON_FEEL={
+  ar:{pitch:.0075,yaw:.0028,yawBias:.55,recover:6,bloom:.003,bloomMax:.022,heatDecay:1.8,back:.085,rise:1,roll:.025,rollRandom:false,jitter:0,flash:[1.15,1.4],flashMs:42,tracer:[0xffd575,.016,120],remoteKick:.085},
+  smg:{pitch:.0032,yaw:.0062,yawBias:0,recover:10,bloom:.0016,bloomMax:.016,heatDecay:2.6,back:.045,rise:.5,roll:.05,rollRandom:true,jitter:.011,flash:[.75,.85],flashMs:28,tracer:[0xff9ec0,.009,85],remoteKick:.05},
+  shotgun:{pitch:.06,yaw:.012,yawBias:0,recover:4,bloom:0,bloomMax:0,heatDecay:1,back:.19,rise:1.7,roll:.07,rollRandom:true,jitter:0,flash:[2.4,1.2],flashMs:70,tracer:[0xffa24a,.011,80],thump:62,push:3,remoteKick:.17},
+  sniper:{pitch:.085,yaw:.007,yawBias:.35,recover:2.4,bloom:0,bloomMax:0,heatDecay:1,back:.23,rise:1.4,roll:-.045,rollRandom:false,jitter:0,flash:[1,2.9],flashMs:55,tracer:[0x8deaff,.03,320],thump:46,remoteKick:.19}
+};
+const aimRecoil={target:{x:0,y:0},applied:{x:0,y:0}};
+const shotHeat=new Map();
+function decayedHeat(id,now,feel){const h=shotHeat.get(id);return h?h.v*Math.exp(-(now-h.t)/1000*feel.heatDecay):0}
+function localHeat(now){return (state.localHeat||0)*Math.exp(-(now-(state.localHeatAt||0))/1000*WEAPON_FEEL[state.selectedWeapon].heatDecay)}
+function updateAimRecoil(dt,now){
+  const feel=WEAPON_FEEL[state.selectedWeapon],w=weaponStats(state.selectedWeapon),t=aimRecoil.target,a=aimRecoil.applied;
+  if(now-state.lastShot>Math.min(w.rate*1.25,170)){const k=Math.exp(-feel.recover*dt);t.x*=k;t.y*=k}
+  const follow=1-Math.exp(-38*dt),nx=a.x+(t.x-a.x)*follow,ny=a.y+(t.y-a.y)*follow;
+  if(isPlaying()){camera.rotation.x=clamp(camera.rotation.x+nx-a.x,-1.45,1.45);camera.rotation.y+=ny-a.y}
+  a.x=nx;a.y=ny;
+}
+function resetAimRecoil(){aimRecoil.target.x=aimRecoil.target.y=aimRecoil.applied.x=aimRecoil.applied.y=0}
 let lobbyRenderer,lobbyScene,lobbyCamera,lobbyFighter;
 const lobbyFighters=new Map();
 const lobbyLook={x:0,y:0};
@@ -174,7 +194,7 @@ function trackLobbyPointer(e){if(state.mode!=='home'||e.pointerType==='touch')re
 function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt),now=performance.now(),breath=Math.sin(now*.0022)*.006;lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);lobbyFighter.position.y=THREE.MathUtils.lerp(lobbyFighter.position.y,breath,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso){torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12+Math.sin(now*.0016)*.008,blend);torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,lobbyLook.x*.06,blend)}const gun=lobbyFighter.userData.gun;if(gun){gun.position.y=THREE.MathUtils.lerp(gun.position.y,breath*.8,blend);gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,Math.sin(now*.0018)*.006,blend)}}
 
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
-const weaponDescriptions={ar:'Steady full auto / medium range',shotgun:'10-pellet blast / close range',sniper:'Scope for precision / rail trail',smg:'Fast hip fire / +14% movement'};
+const weaponDescriptions={ar:'Climbs up-right / tap for pinpoint accuracy',shotgun:'10-pellet blast / huge kick + shoves you back',sniper:'Heavy punch / scope for precision',smg:'Jittery spray / +14% movement'};
 // Shared sensitivity keeps captured and embedded-browser mouse look consistent.
 const LOOK_RADIANS_PER_PIXEL=.00656;
 const colliders=[];
@@ -365,7 +385,7 @@ function syncMeshes(dt=1/60){
     m.scale.y=damp(m.scale.y,1-slide*.05-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
     // Breathing, recoil and footfalls use damped values so low-rate network snapshots never pop.
     const step=Math.sin(u.stride),lift=Math.sin(now*.002+p.id.length)*.006+Math.abs(step)*.017*u.walk-landing*.055;
-    const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*.085:0;
+    const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*(WEAPON_FEEL[p.weapon]?.remoteKick??.085):0;
     if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
     u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05-slide*.18,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:-slide*.12,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.10,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
@@ -464,7 +484,7 @@ function beginMatch(asHost){
   state.climbing=null;
   state.arsenal={...state.players[state.id]?.arsenal};if(Object.hasOwn(WEAPONS,state.players[state.id]?.weapon))state.selectedWeapon=state.players[state.id].weapon;state.lootNoticeUntil=0;
   state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.pendingWeapon=state.selectedWeapon;
-  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();hitModels.clear();hitReactions.clear();state.equipped=state.map==='surf'?'bat':'gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
+  state.meleeStart=state.lastMelee=-Infinity;meleeCooldowns.clear();meleeVisuals.clear();shotCooldowns.clear();shotHeat.clear();hitModels.clear();hitReactions.clear();state.equipped=state.map==='surf'?'bat':'gun';state.headshotAt=-Infinity;state.respawnAt=0;state.fireHeld=false;resetAim();$('respawn').classList.remove('active');
   state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.dip=weaponMotion.aimKick=0;
   state.matchActive=true;state.mode='game';state.health=100;state.kills=0;state.deaths=0;state.alive=true;const w=WEAPONS[state.selectedWeapon];state.ammo=w.mag;state.reserve=Infinity;state.reloading=false;
   if(state.map==='surf'){state.surfStart=Date.now();state.surfCheckpoint=0}
@@ -544,6 +564,13 @@ function shoot(){
   if(state.buildMode||state.map==='surf')return;
   if(!isPlaying()||state.equipped==='bat'||state.reloading||performance.now()-state.meleeStart<MELEE.duration||performance.now()-state.switchStart<SWITCH_DURATION||performance.now()-state.inspectStart<INSPECT_DURATION)return;const w=weaponStats(state.selectedWeapon),now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponMotion.kick=Math.min(1.4,weaponMotion.kick+({ar:.65,shotgun:1.3,sniper:1.1,smg:.45}[state.selectedWeapon]));
   weaponSound(state.selectedWeapon,w.tier);shotShake=Math.min(.008,shotShake+({ar:.002,smg:.0015,shotgun:.008,sniper:.006}[state.selectedWeapon]));publishCombatPose();sendHost({t:'shot'});
+  // Recoil lands after the pose is published, so this shot goes where you aimed and the next one climbs.
+  const feel=WEAPON_FEEL[state.selectedWeapon],steady=1-.35*state.aimBlend,vary=.85+Math.random()*.3;
+  aimRecoil.target.x+=feel.pitch*steady*vary;aimRecoil.target.y-=(feel.yawBias+(Math.random()-.5)*2)*feel.yaw*steady;
+  weaponMotion.roll+=feel.roll*(feel.rollRandom&&Math.random()<.5?-1:1);weaponMotion.flashSpin=Math.random()*Math.PI*2;
+  state.localHeat=Math.min(feel.bloomMax,localHeat(now)+feel.bloom);state.localHeatAt=now;
+  if(feel.thump)tone(feel.thump,.2,.06,'sine',0,feel.thump*.45);
+  if(feel.push){const f=new THREE.Vector3();camera.getWorldDirection(f);f.y=0;if(f.lengthSq()>1e-6){f.normalize();const push=feel.push*(state.onGround?1:1.5);state.velocityX-=f.x*push;state.velocityZ-=f.z*push}}
 }
 function updateAutomaticFire(){if(state.fireHeld&&WEAPONS[state.selectedWeapon].automatic)shoot()}
 function publishCombatPose(){const p=myPublic();if(state.host)state.players[state.id]=p;else sendHost({t:'state',x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,equipped:p.equipped,aiming:p.aiming,grounded:p.grounded,reloading:p.reloading,sliding:p.sliding})}
@@ -558,7 +585,8 @@ function resolveShot(id,now=performance.now()){
     model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,p.yaw||0,0);model.scale.y=p.sliding?.78:1;poseEmote(model,p);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
   }
   const origin=new THREE.Vector3(attacker.x,(attacker.y??1.7)-(attacker.sliding ? .42 : 0),attacker.z),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(attacker.pitch||0,attacker.yaw||0,0,'YXZ')),ends=[],impacts=[];
-  const spread=attacker.aiming?(w.adsSpread??w.spread*.55):w.spread;
+  const feel=WEAPON_FEEL[attacker.weapon],heat=decayedHeat(id,now,feel);shotHeat.set(id,{v:Math.min(feel.bloomMax,heat+feel.bloom),t:now});
+  const spread=(attacker.aiming?(w.adsSpread??w.spread*.55):w.spread)+heat*(attacker.aiming?.4:1);
   const recordHit=(first,multiplier=1)=>{const targetId=first.object.userData.playerId,targetModel=hitModels.get(targetId);if(!targetModel)return;const torso=targetModel.userData.avatar?.userData.danceTorso,local=(torso||targetModel).worldToLocal(first.point.clone()),headshot=local.y+(torso?.75:0)>=1.80,hit=hits.get(targetId)||{damage:0,headshot:false,point:first.point},falloff=attacker.weapon==='shotgun'?clamp(1-Math.max(0,first.distance-7)/22,.35,1):attacker.weapon==='smg'?clamp(1-Math.max(0,first.distance-20)/60,.6,1):1;hit.damage+=w.damage*falloff*multiplier*(headshot?2:1);hit.headshot||=headshot;if(headshot)hit.point=first.point;hits.set(targetId,hit)};
   for(let n=0;n<w.pellets;n++){
     const angle=n*2.399963,radius=Math.sqrt((n+.5)/w.pellets)*spread*.5,dx=w.pellets>1?Math.cos(angle)*radius:(Math.random()-.5)*spread,dy=w.pellets>1?Math.sin(angle)*radius:(Math.random()-.5)*spread;
@@ -583,7 +611,7 @@ function showTracers(message){
   const start=new THREE.Vector3().fromArray(message.origin);
   const muzzle=weaponModel?.userData.rig?.userData.gun?.userData.muzzle;
   if(message.id===state.id&&muzzle){camera.updateMatrixWorld(true);muzzle.getWorldPosition(start)}
-  for(const end of message.ends.slice(0,12)){if(!valid(end))continue;const slot=tracerSlots[tracerCursor++%tracerSlots.length];slot.start.copy(start);slot.end.fromArray(end);slot.born=performance.now();slot.life=message.weapon==='sniper'?300:110;slot.width=message.weapon==='sniper'?.03:.014;tracerMesh.setColorAt((tracerCursor-1)%tracerSlots.length,new THREE.Color(message.tier?RARITIES[message.tier]?.color||0x66ddff:message.weapon==='sniper'?0x8deaff:0xffd575))}
+  for(const end of message.ends.slice(0,12)){if(!valid(end))continue;const slot=tracerSlots[tracerCursor++%tracerSlots.length];slot.start.copy(start);slot.end.fromArray(end);const look=(WEAPON_FEEL[message.weapon]||WEAPON_FEEL.ar).tracer;slot.born=performance.now();slot.life=look[2];slot.width=look[1];tracerMesh.setColorAt((tracerCursor-1)%tracerSlots.length,new THREE.Color(message.tier?RARITIES[message.tier]?.color||0x66ddff:look[0]))}
   if(tracerMesh.instanceColor)tracerMesh.instanceColor.needsUpdate=true;remoteShotTimes.set(message.id,performance.now());if(message.id!==state.id){const offset=start.clone().sub(camera.position),distance=offset.length(),right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),pan=distance?offset.dot(right)/distance:0;if(distance<85)weaponSound(message.weapon,message.tier,.65/(1+distance*.07),pan,distance)}for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});tracerMesh.visible=true;updateTracers(performance.now());
 }
 function updateTracers(now){
@@ -701,7 +729,7 @@ function updateAim(dt){
 }
 function aimSensitivity(){return state.aimBlend?Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/Math.tan(THREE.MathUtils.degToRad(38)):1}
 function resetAim(){
-  state.aiming=false;state.aimProgress=state.aimBlend=0;
+  state.aiming=false;state.aimProgress=state.aimBlend=0;state.localHeat=0;resetAimRecoil();
   if(camera){camera.fov=76;camera.updateProjectionMatrix()}
   if(controls)controls.pointerSpeed=0;
   $('scope-overlay').hidden=true;$('crosshair').style.opacity='1';
@@ -718,7 +746,8 @@ function updateWeaponMotion(dt,now){
   const dy=m.yaw===null?0:Math.atan2(Math.sin(camera.rotation.y-m.yaw),Math.cos(camera.rotation.y-m.yaw)),dp=m.pitch===null?0:camera.rotation.x-m.pitch;
   m.yaw=camera.rotation.y;m.pitch=camera.rotation.x;
   m.swayX=THREE.MathUtils.lerp(m.swayX,clamp(dy*.18/Math.max(dt,.001),-.05,.05),blend);m.swayY=THREE.MathUtils.lerp(m.swayY,clamp(dp*.12/Math.max(dt,.001),-.035,.035),blend);
-  m.kick*=Math.exp(-profile.settle*dt);m.aimKick*=Math.exp(-9*dt);
+  m.kick*=Math.exp(-profile.settle*dt);m.aimKick*=Math.exp(-9*dt);m.roll*=Math.exp(-profile.settle*dt);
+  const feel=WEAPON_FEEL[state.selectedWeapon],jx=feel.jitter*m.kick*(Math.random()-.5),jy=feel.jitter*m.kick*(Math.random()-.5);
   const t=state.reloading?(now-state.reloadStart)/w.reload:0,tilt=state.reloading?smoothStep(t/.22)*(1-smoothStep((t-.76)/.24)):0;
   if(state.reloading){if(t>=.24&&reloadSoundStage<1){playSoundBuffer('magout',.3);reloadSoundStage=1}if(t>=.58&&reloadSoundStage<2){playSoundBuffer('magin',.4);reloadSoundStage=2}if(t>=.83&&reloadSoundStage<3){playSoundBuffer('bolt',.32);reloadSoundStage=3}}
   const breath=Math.sin(now*.002)*.0025,bob=Math.sin(m.phase),mag=state.reloading?smoothStep((t-.20)/.16)*(1-smoothStep((t-.57)/.17)):0;
@@ -730,8 +759,8 @@ function updateWeaponMotion(dt,now){
   rig.position.y+=inspect*.06;rig.position.x+=inspect>0?Math.sin(inspectT*Math.PI*4)*.02*inspect:0;
   rig.visible=!(state.selectedWeapon==='sniper'&&aim>.78);
   const slide=clamp(slideView/.54,0,1);
-  weaponModel.position.set((bob*.012*m.walk*(1-slide)-m.swayX)*free,(-Math.abs(Math.cos(m.phase))*.010*m.walk*(1-slide)+breath)*free-.12*tilt-m.dip*.85-slide*.16,.085*m.kick+.10*tilt);
-  weaponModel.rotation.set(profile.kick*m.kick+m.swayY*free-.24*tilt+m.dip*.55+slide*.075,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt-slide*.14);
+  weaponModel.position.set((bob*.012*m.walk*(1-slide)-m.swayX)*free+jx,(-Math.abs(Math.cos(m.phase))*.010*m.walk*(1-slide)+breath)*free-.12*tilt-m.dip*.85-slide*.16+jy,feel.back*m.kick*(1-.4*aim)+.10*tilt);
+  weaponModel.rotation.set(profile.kick*feel.rise*m.kick+m.swayY*free-.24*tilt+m.dip*.55+slide*.075,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt-slide*.14+m.roll);
   rig.userData.support.position.set(-.10*mag,-.16*mag,.16*mag);
   rig.userData.gun.userData.magazine.position.y=1.36-.23*mag;
   const since=(now-state.lastShot)/1000,action=rig.userData.gun.userData.action;
@@ -739,8 +768,10 @@ function updateWeaponMotion(dt,now){
   action.position.z=.12*cycle;
   if(state.selectedWeapon==='shotgun')rig.userData.support.position.z+=.12*cycle;
   if(state.selectedWeapon==='sniper'){rig.userData.trigger.position.z=.10*cycle;rig.userData.trigger.position.x=.045*cycle}else rig.userData.trigger.position.set(0,0,0);
-  rig.userData.flash.visible=active&&!state.reloading&&now-state.lastShot<(state.selectedWeapon==='shotgun'?65:40);rig.userData.flash.material.color.set(w.tier?RARITIES[w.tier].color:0xffdf92);
-  rig.userData.flash.scale.setScalar((state.selectedWeapon==='shotgun'?1.65:state.selectedWeapon==='sniper'?1.25:1)+Math.sin(now)*.12);
+  const flashAge=now-state.lastShot,flash=rig.userData.flash;
+  flash.visible=active&&!state.reloading&&flashAge<feel.flashMs;flash.material.color.set(w.tier?RARITIES[w.tier].color:0xffdf92);
+  const flicker=.88+Math.random()*.24,grow=1+clamp(flashAge/feel.flashMs,0,1)*.35;
+  flash.scale.set(feel.flash[0]*flicker,feel.flash[1]*flicker*grow,feel.flash[0]*flicker);flash.rotation.y=m.flashSpin;
 }
 
 function advanceMovement(dt){if(isPlaying()){camera.rotation.y+=((state.keys.ArrowLeft?1:0)-(state.keys.ArrowRight?1:0))*2.8*dt;}const steps=Math.max(1,Math.ceil(dt*120)),step=dt/steps;for(let i=0;i<steps;i++)updateMovement(step)}
@@ -1068,7 +1099,7 @@ function updateHud(){
 }
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
