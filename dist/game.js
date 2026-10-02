@@ -5,7 +5,7 @@ import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
 import { createNeegyCharacter } from './neegy-character.js?v=face-30';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=cyber-16';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
-import { buildNeonTown, createPickupMesh } from './neon-town.js?v=solid-stairs-36';
+import { buildNeonTown, createPickupMesh } from './neon-town.js?v=stair-entry-38';
 import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS } from './surf.js?v=surf-33';
 
 const $ = (id) => document.getElementById(id);
@@ -835,7 +835,7 @@ function moveSweptAxis(axis,delta){
   // Ordered contacts allow a staircase to be climbed even during a fast frame.
   if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?220:(axis==='x'?34:35);
   const requested=old+delta;let next=clamp(requested,-bound,bound);
-  const radius=c=>c.stair&&axis==='z'?0:.55;
+  const radius=c=>c.stair&&(axis==='z'||c.stairEntrance)?0:.55;
   const crossRadius=c=>c.stair&&axis==='x'?0:.55;
   const contacts=colliders.filter(c=>!c.ramp&&side>c['min'+cross]-crossRadius(c)&&side<c['max'+cross]+crossRadius(c)).sort((a,b)=>delta>0?(a['min'+suffix]-radius(a))-(b['min'+suffix]-radius(b)):(b['max'+suffix]+radius(b))-(a['max'+suffix]+radius(a)));
   for(const c of contacts){
@@ -843,13 +843,13 @@ function moveSweptAxis(axis,delta){
     const crossing=delta>0?old<=near&&next>near:old>=far&&next<far;if(!crossing)continue;
     const foot=camera.position.y-1.7;if(!verticalOverlap(c,foot))continue;
     const contact=(delta>0?near:far)+Math.sign(delta)*.0001,x=axis==='x'?contact:side,z=axis==='z'?contact:side;
-    if(state.onGround&&(!c.stair||axis==='z')&&!c.ramp&&Number.isFinite(c.maxY)&&c.maxY-foot<=.31&&!collides(x,z,c.maxY+.001)){camera.position.y=c.maxY+1.7;continue}
+    if(state.onGround&&(!c.stair||axis==='z'||c.stairEntrance)&&!c.ramp&&Number.isFinite(c.maxY)&&c.maxY-foot<=.31&&!collides(x,z,c.maxY+.001)){camera.position.y=c.maxY+1.7;continue}
     if(delta>0)next=Math.min(next,near-.00001);else next=Math.max(next,far+.00001);
   }
   camera.position[axis]=next;if(next!==requested){state[axis==='x'?'velocityX':'velocityZ']=0;state.hopChain=0}
 }
 function verticalOverlap(c,foot){return foot<(c.maxY??Infinity)-.001&&foot+1.9>(c.minY??-Infinity)+.001}
-function collides(x,z,foot=0){return colliders.some(c=>{const rx=.55,rz=c.stair?0:.55;return verticalOverlap(c,foot)&&x>c.minX-rx&&x<c.maxX+rx&&z>c.minZ-rz&&z<c.maxZ+rz})}
+function collides(x,z,foot=0){return colliders.some(c=>{const rx=c.stairEntrance?0:.55,rz=c.stair?0:.55;return verticalOverlap(c,foot)&&x>c.minX-rx&&x<c.maxX+rx&&z>c.minZ-rz&&z<c.maxZ+rz})}
 function rampHeight(c,x,z){
   // heightAtMin/heightAtMax are the actual physical height at the min/max edge of the
   // collider's footprint — NOT the same as minY/maxY (which only give the box's flat

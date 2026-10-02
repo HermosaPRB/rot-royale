@@ -33,15 +33,17 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
     // Sixteen real treads, tagged for automatic step-up. Their top is the floor height.
     const stairStart=z-side*3.8,run=7.6;
     for(let i=0;i<16;i++){const height=(i+1)*.25,stepZ=stairStart+side*(i+.5)*run/16;
-      block(7.6,height/2,stepZ,2.8,height,run/16,palette.white);colliders.at(-1).stair=true;
+      block(7.6,height/2,stepZ,2.8,height,run/16,palette.white);Object.assign(colliders.at(-1),{stair:true,stairEntrance:i===0});
       block(7.6,height+.009,stepZ-side*.20,2.75,.018,.055,glow,false,true);
       block(7.6,height-.055,stepZ+side*.225,2.68,.09,.035,palette.dark,false,true);
     }
-    // Enclose the flight's flanks. The upper landing stays open at the rear.
+    // Leave the first steps open to the room: the front facade prevents a straight
+    // approach, so players must be able to turn in from the side at the bottom.
+    const sideWallRun=run-1.5,sideWallZ=z+side*.75;
     for(const x of [6.06,9.14]){
-      block(x,1.85,z,.24,3.7,run,palette.dark);
-      block(x,3.73,z,.30,.08,run,accent,false,true);
-      for(let i=0;i<4;i++)block(x+(x<7?.13:-.13),1.02+i*.74,z,.025,.035,run-.4,0x7693a3,false,true);
+      block(x,1.85,sideWallZ,.24,3.7,sideWallRun,palette.dark);
+      block(x,3.73,sideWallZ,.30,.08,sideWallRun,accent,false,true);
+      for(let i=0;i<4;i++)block(x+(x<7?.13:-.13),1.02+i*.74,sideWallZ,.025,.035,sideWallRun-.4,0x7693a3,false,true);
     }
     // Open upper room with a broad, unglazed street-facing firing window.
     block(-10,5.5,z,.45,3,10,accent);block(10,5.5,z,.45,3,10,accent);block(0,5.5,z+side*5,20,3,.4,accent);
