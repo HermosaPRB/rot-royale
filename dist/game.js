@@ -6,6 +6,7 @@ import { createNeegyCharacter } from './neegy-character.js?v=face-30';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=gun-design-41';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=stair-entry-38';
+import { buildMozzarellaFactory, factoryConveyorAt, factorySteamBlocksSight, updateFactoryEffects } from './mozzarella-factory.js?v=factory-43';
 import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS } from './surf.js?v=surf-33';
 
 const $ = (id) => document.getElementById(id);
@@ -202,7 +203,7 @@ const colliders=[];
 const ladders=[];
 const shotBlockers=[];
 const materials=new Map();
-const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
+const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},factory:{name:'MIDNIGHT MOZZARELLA',description:'Twin conveyors · vat cover · catwalk · steam flanks',spawns:[[-27,-26],[27,26],[-27,26],[27,-26],[0,-29],[0,29]],pickups:[['case',-27,0],['case',27,0],['health',0,-25],['health',0,25]],sky:0x142b43},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
 const RARITIES=[{name:'STANDARD',color:0xb9c5d1,damage:1,rate:1,reload:1},{name:'RARE',color:0x5bbbff,damage:1.06,rate:.97,reload:.96},{name:'EPIC',color:0xcf83ff,damage:1.12,rate:.94,reload:.92},{name:'LEGENDARY',color:0xffce62,damage:1.18,rate:.90,reload:.88}];
 const CYBER_NAMES={ar:'Ion Pulse AR',shotgun:'Nova Scattergun',sniper:'Prism Rail Sniper',smg:'Volt Shredder'};
 const pickupMeshes=new Map(),mapCache=new Map();let builtMap=null;
@@ -215,9 +216,10 @@ function setMap(id){
   syncBuilds([]);if(buildGhost)world.remove(buildGhost);buildGhost=null;state.buildMode=false;
   for(const burst of coffeeBursts)burst.mesh.dispose();if(tracerMesh){tracerMesh.dispose();tracerMesh.geometry.dispose();tracerMesh.material.dispose()}
   world.clear();playerMeshes.clear();hitModels.clear();pickupMeshes.clear();coffeeBursts.length=0;tracerMesh=null;tracerSlots.forEach(s=>s.born=-Infinity);colliders.length=shotBlockers.length=ladders.length=0;state.climbing=null;
-  if(mapCache.has(id)){const saved=mapCache.get(id);world.add(...saved.children);colliders.push(...saved.colliders);shotBlockers.push(...saved.blockers);ladders.push(...saved.ladders)}else{if(id==='neon')buildNeonTown({world,colliders,shotBlockers,mat,ladders});else if(id==='surf')buildSurfMap({world,colliders,shotBlockers,mat,ladders});else makePlaza();mapCache.set(id,{children:[...world.children],colliders:[...colliders],blockers:[...shotBlockers],ladders:[...ladders]})}
+  if(mapCache.has(id)){const saved=mapCache.get(id);world.add(...saved.children);colliders.push(...saved.colliders);shotBlockers.push(...saved.blockers);ladders.push(...saved.ladders)}else{if(id==='neon')buildNeonTown({world,colliders,shotBlockers,mat,ladders});else if(id==='factory')buildMozzarellaFactory({world,colliders,shotBlockers,mat,ladders});else if(id==='surf')buildSurfMap({world,colliders,shotBlockers,mat,ladders});else makePlaza();mapCache.set(id,{children:[...world.children],colliders:[...colliders],blockers:[...shotBlockers],ladders:[...ladders]})}
   builtMap=id;
   scene.background.set(MAPS[id].sky||0x82c9e8);scene.fog.color.copy(scene.background);
+  const sun=scene.getObjectByName('arena-sun'),ambient=scene.getObjectByName('arena-ambient');if(sun)sun.intensity=id==='factory'?1.3:3.2;if(ambient)ambient.intensity=id==='factory'?1.5:2.2;
   const cached=mapCache.get(id);cached.pickups??=MAPS[id].pickups.map(([kind,x,z])=>{const mesh=createPickupMesh(kind);mesh.position.set(x,0,z);return mesh});cached.pickups.forEach((mesh,i)=>{world.add(mesh);pickupMeshes.set(i,mesh)});
 }
 function resetPickups(){state.pickups=MAPS[state.map].pickups.map(([kind,x,z],id)=>({id,kind,x,z,readyAt:Date.now()+(kind==='case'?20000:0)}))}
@@ -298,7 +300,7 @@ function initWorld(){
   controls=new PointerLockControls(camera,$('game'));controls.pointerSpeed=0;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;state.mouseX=state.mouseY=null;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
   document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
-  scene.add(new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2));const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
+  const ambient=new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2);ambient.name='arena-ambient';scene.add(ambient);const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.name='arena-sun';sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
   setMap(state.map);makeWeapon();initLobbyPreview();window.addEventListener('resize',resize);animate();
 }
 function mat(color,rough=.82){const key=`${color}:${rough}`;if(!materials.has(key))materials.set(key,new THREE.MeshStandardMaterial({color,roughness:rough}));return materials.get(key)}
@@ -789,7 +791,7 @@ function updateMovement(dt){
   state.landingGrace=Math.max(0,(state.landingGrace||0)-dt);
   const now=performance.now();
   if(state.slideUntil>now&&state.onGround&&!state.keys.Space){
-    const speed=previousSpeed*Math.exp(-.4*dt),steer=moving?1-Math.exp(-1.6*dt):0;state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.01){state.velocityX*=speed/length;state.velocityZ*=speed/length}moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',state.velocityZ*dt);updateVerticalMovement(dt);return;
+    const speed=previousSpeed*Math.exp(-.4*dt),steer=moving?1-Math.exp(-1.6*dt):0;state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.01){state.velocityX*=speed/length;state.velocityZ*=speed/length}moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',(state.velocityZ+(state.map==='factory'?factoryConveyorAt(camera.position.x,camera.position.z,camera.position.y-1.7):0))*dt);updateVerticalMovement(dt);return;
   }
   if(state.slideUntil&&state.slideUntil<=now&&state.onGround){state.landingGrace=Math.max(state.landingGrace,.22);state.slideUntil=0}
   if(state.keys.Space||!state.onGround)state.slideUntil=0;
@@ -853,6 +855,7 @@ function updateMovement(dt){
     const jumping=!!state.keys.Space,walk=8.5*movementSpeed(),speed=moving&&jumping?Math.max(11*movementSpeed(),previousSpeed)+(state.hopChain>0?2.6:0):walk;
     if(!jumping&&state.landingGrace>0&&previousSpeed>walk){const steer=1-Math.exp(-5*dt),drag=Math.exp(-1.1*dt);state.velocityX=THREE.MathUtils.lerp(state.velocityX*drag,moving?wish.x*walk:0,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ*drag,moving?wish.z*walk:0,steer)}
     else{state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed}
+    if(state.map==='factory')state.velocityZ+=factoryConveyorAt(camera.position.x,camera.position.z,camera.position.y-1.7);
     if(jumping){state.jumpQueued=false;state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
     // Source-style AirAccelerate for normal airborne movement.
@@ -907,7 +910,7 @@ function updateVerticalMovement(dt){
   state.onGround=next<=ground;if(state.onGround){if(!wasGround&&impactSpeed>3){state.landingGrace=.12;landingKick=Math.min(.12,impactSpeed*.008);tone(85,.065,.02,'triangle',0,35)}next=ground;state.velocityY=0}camera.position.y=next+1.7;
 }
 function nearbyLadder(){const foot=camera.position.y-1.7;return ladders.findIndex(l=>Math.hypot(camera.position.x-l.x,camera.position.z-l.z)<1.85&&foot>=l.bottom-.3&&foot<=l.top+.35)}
-function updateLadderHint(){const near=nearbyLadder();$('ladder-hint').textContent=state.climbing!==null?'W / S · CLIMB   SPACE / E · LET GO':near>=0?'E · GRAB ROOFTOP LADDER':''}
+function updateLadderHint(){const near=nearbyLadder();$('ladder-hint').textContent=state.climbing!==null?'W / S · CLIMB   SPACE / E · LET GO':near>=0?`E · GRAB ${state.map==='factory'?'CATWALK':'ROOFTOP'} LADDER`:''}
 function toggleLadder(){
   if(!isPlaying())return;if(state.climbing!==null){state.climbing=null;state.onGround=false;return}
   const index=nearbyLadder();if(index<0)return;const l=ladders[index];state.climbing=index;state.velocityX=state.velocityY=state.velocityZ=state.hopChain=0;state.onGround=false;camera.position.x=l.x;camera.position.z=l.z;
@@ -1041,7 +1044,7 @@ function updateClimbing(dt){
   const direction=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),foot=clamp(camera.position.y-1.7+direction*3.6*dt,l.bottom,l.top);camera.position.set(l.x,foot+1.7,l.z);
   if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0}
 }
-function hasClearShot(from,to){const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
+function hasClearShot(from,to){if(state.map==='factory'&&factorySteamBlocksSight(from,to))return false;const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
 function makeBotBrain(p,i,now){
   const skill=.82+Math.random()*.46;
   return{skill,wob:{sniper:.008,ar:.016,smg:.02,shotgun:.026}[p.weapon]||.018,tau:(.045+Math.random()*.06)/skill,react:(160+Math.random()*220)/skill,turnTrack:2.4*skill,turnFlick:7.5*skill,strafeDir:i%2?1:-1,strafeActive:true,nextSense:0,nextShot:now+400+Math.random()*400,nextHop:now+1400+Math.random()*1600,nextSlide:now+3500+Math.random()*3000,slideUntil:0,burstLeft:2+Math.floor(Math.random()*6),burstUntil:0,ammo:WEAPONS[p.weapon].mag,vx:0,vz:0,stuck:0,targetId:null,visible:false,lastSeenAt:-Infinity,lastX:p.x,lastZ:p.z,engagedAt:now,aimX:p.x,aimY:1.45,aimZ:p.z,wobT:Math.random()*9,wobFY:2+Math.random()*2.6,wobPY:Math.random()*6.3,wobFP:1.3+Math.random()*1.7,wobPP:Math.random()*6.3,strafeUntil:0,commitAt:0,goalX:p.x,goalZ:p.z,goalUntil:0,pauseUntil:0,lookYaw:0,detour:0,detourUntil:0,reloadUntil:0,prevTX:null,prevTZ:null,prevAt:0,tSpeed:0,rangeNow:16}
@@ -1201,7 +1204,7 @@ function updateHud(){
 }
 function addFeed(text){if(!text)return;const d=document.createElement('div');d.textContent=text;$('kill-feed').prepend(d);setTimeout(()=>d.remove(),4000)}
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}if(state.map==='factory')updateFactoryEffects();updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -1271,7 +1274,7 @@ function updateLobbyModeUI(){
   $('practice').querySelector('span').textContent=surf?'Start Surfing':'Practice';
   $('practice').querySelector('small').textContent=surf?'Four-stage skill course · no combat':'Play against bots';
   $('match-badge').innerHTML=surf?'Solo <span>CS-style surf</span>':'Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':'Most eliminations wins. Respawn and keep playing.';
+  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':state.map==='factory'?'Ride the twin belts. Jump to keep momentum. Steam hides players; it does not stop bullets. Most eliminations wins.':'Most eliminations wins. Respawn and keep playing.';
   $('win-rule').textContent=surf?'Reach the gold finish gate. Falling returns you to the latest checkpoint.':'Most eliminations in 3 minutes wins.';
 }
 renderKeybinds();buildChoices();initWorld();showScreen('home');
