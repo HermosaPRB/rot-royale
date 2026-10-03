@@ -7,7 +7,7 @@
   <title>Rot Royale</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=crosshairs-51">
+  <link rel="stylesheet" href="./styles.css?v=airdrop-53">
   <link rel="stylesheet" href="./lobby.css?v=skins-29">
   <link rel="stylesheet" href="./interface.css?v=death-49">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
@@ -139,6 +139,10 @@
       <div id="speed-lines" class="speed-lines" aria-hidden="true"></div>
       <div id="target-card" class="target-card"><strong id="target-name"></strong><span><i id="target-health"></i></span></div>
       <div id="damage-numbers" class="damage-numbers" aria-live="polite"></div>
+      <div id="letterbox" class="letterbox" aria-hidden="true"><i></i><i></i></div>
+      <div id="airdrop-banner" class="airdrop-banner" role="status" aria-live="assertive">AIRDROP<small>Supply crate inbound · map center</small></div>
+      <div id="airdrop-marker" class="airdrop-marker" aria-hidden="true"><div class="airdrop-pin"><span class="airdrop-diamond"></span><small>AIRDROP · <b id="airdrop-distance">0m</b></small></div></div>
+      <div id="airdrop-hold" class="airdrop-hold"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" class="track"></circle><circle cx="22" cy="22" r="18" class="fill" pathLength="1"></circle></svg><small id="airdrop-hold-label">HOLD E · OPEN AIRDROP</small></div>
       <div id="elimination-banner" class="elimination-banner">ELIMINATION <small id="elimination-name"></small></div>
       <button id="capture-mouse" class="capture-mouse" hidden>Enable free look · L</button><div id="control-hint" class="control-hint">WASD TO MOVE · CLICK TO CAPTURE MOUSE</div>
       <div id="ladder-hint" class="ladder-hint"></div>
@@ -156,6 +160,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=sniper-52"></script>
+  <script type="module" src="./game.js?v=airdrop-53"></script>
 </body>
 </html>

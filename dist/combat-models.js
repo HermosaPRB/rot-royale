@@ -165,8 +165,8 @@ export function createHeldGun(color,type='ar',detailed=false,rarity=0){
   gun.userData.magazine=gun.getObjectByName('magazine');gun.userData.muzzle=gun.getObjectByName('muzzle');gun.userData.sight=gun.getObjectByName('sight');gun.userData.action=gun.getObjectByName('action');return gun;
 }
 
-export function createFirstPersonWeapon(color,type,rarity=0){
-  const rig=new THREE.Group(),gun=createHeldGun(color,type,true,rarity);rig.add(gun);rig.userData.gun=gun;rig.position.set(.16,-.06,-.28);rig.rotation.y=.20;
+export function createFirstPersonWeapon(color,type,rarity=0,customGun=null){
+  const rig=new THREE.Group(),gun=customGun||createHeldGun(color,type,true,rarity);rig.add(gun);rig.userData.gun=gun;rig.position.set(.16,-.06,-.28);rig.rotation.y=.20;
   gun.position.set(.16,-1.74,-.32);
   const skin=new THREE.MeshStandardMaterial({color:0xd8954d,roughness:.56});
   for(const [name,a,b] of [['trigger',[.55,-.7,-.02],[.31,-.375,-.66]],['support',[-.3,-.7,-.04],[.24,-.29,-.96]]]){
