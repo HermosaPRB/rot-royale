@@ -97,7 +97,7 @@ function buildNeegy(preview){
     tube([[-.07,-.04,.111],[-.07,-.13,.116],[0,-.15,.117],[.07,-.13,.116],[.07,-.04,.111]],.006,light,leg);
     tube([[s*.11,-.015,.025],[s*.118,-.14,.025],[s*.105,-.27,.025]],.006,light,leg);
     const arm=new THREE.Group();arm.name='arm-'+s;arm.position.set(s*.23,1.435,.025);root.add(arm);
-    const hand=s===1?[-.08,-.07,-.365]:[.31,.015,-.665],elbow=s===1?[.065,-.24,-.12]:[-.01,-.20,-.32];
+    const hand=s===1?[.15,-.07,-.365]:[.59,.015,-.665],elbow=s===1?[.145,-.24,-.12]:[.09,-.20,-.32];
     tube([[0,0,0],[elbow[0],elbow[1],elbow[2]],[hand[0],hand[1],hand[2]+.085]],.058,cloth,arm);
     oval(gold,...elbow,.061,.064,.065,arm);
     oval(light,hand[0],hand[1],hand[2]+.065,.054,.055,.030,arm);

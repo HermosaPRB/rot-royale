@@ -9,6 +9,8 @@ const ctx=vm.createContext({THREE,document:{body:{},getElementById:node,createEl
 vm.runInContext(source,ctx);const run=s=>vm.runInContext(s,ctx);
 for(const skin of ['wooden','neegy'])for(const weapon of ['ar','smg','shotgun','sniper']){
   const model=run(`createPlayerMesh({id:'preview',char:'${skin}',weapon:'${weapon}'},false)`),gun=model.userData.gun,avatar=model.userData.avatar;
+  assert.equal(gun.rotation.y,0,`${skin} ${weapon} points straight ahead`);
+  assert.equal(gun.scale.x,.88,`${skin} ${weapon} uses compact third-person scale`);
   model.updateMatrixWorld(true);
   const trigger=avatar.getObjectByName('trigger-hand').getWorldPosition(new THREE.Vector3());
   const support=avatar.getObjectByName('support-hand').getWorldPosition(new THREE.Vector3());
