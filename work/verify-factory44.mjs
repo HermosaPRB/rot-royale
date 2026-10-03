@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from '../../work/three.module.js';
 
-const source=['surface-details.js','mozzarella-factory.js'].map(name=>
+const source=['surface-details.js','arena-details.js','mozzarella-factory.js'].map(name=>
   fs.readFileSync(new URL(`../dist/${name}`,import.meta.url),'utf8').replace(/^import .*;$/gm,'').replaceAll('export function','function').replaceAll('export const','const')
 ).join('\n');
 const context=vm.createContext({THREE,Date});
@@ -29,6 +29,6 @@ assert.ok(!factory.factorySteamBlocksSight(from,to,3000));
 factory.updateFactoryEffects(0);
 let meshes=0,triangles=0;world.traverse(o=>{if(o.isMesh){meshes++;triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3}});
 assert.ok(meshes<85,`draw-call budget exceeded: ${meshes}`);
-assert.ok(triangles<12000,`geometry budget exceeded: ${triangles}`);
+assert.ok(triangles<18000,`geometry budget exceeded: ${triangles}`);
 assert.ok(shotBlockers.length>0);
 console.log(`PASS compact factory: three walkable tiers, six clear ladders, denser cover, clear spawns/belts, ${meshes} meshes, ${triangles} triangles`);

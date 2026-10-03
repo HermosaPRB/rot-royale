@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {mergeRigidParts} from './surface-details.js?v=detail-6';
+import {detailNeonTown} from './arena-details.js?v=polish-46';
 
 // Original arena geometry: opposing homes, a vehicle choke and two flanking gardens.
 // Rigid surfaces are batched by material. Collision remains simple axis-aligned boxes.
@@ -99,6 +100,7 @@ export function buildNeonTown({world,colliders,shotBlockers,mat,ladders=[]}){
   // Stylized trees live outside the playable lanes; each crown is only 80 triangles.
   for(const x of [-38,38])for(let z=-32;z<=32;z+=16){block(x,2,z,.4,4,.4,0x5a4e50,false,true);const crown=new THREE.Mesh(new THREE.IcosahedronGeometry(3,1),mat(z%32?0xdb8fab:0x4a8977));crown.position.set(x,5,z);crown.scale.y=1.4;decor.add(crown)}
   for(let i=0;i<9;i++){const x=-55+i*14;block(x,8+i%3*4,-51,7,16+i%3*8,7,0x88adb8,false,true)}
+  detailNeonTown(decor);
   mergeRigidParts(solid);mergeRigidParts(decor);solid.traverse(m=>{if(m.isMesh)shotBlockers.push(m)});
 }
 

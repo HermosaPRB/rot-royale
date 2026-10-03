@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeRigidParts } from './surface-details.js?v=detail-6';
+import { mergeRigidParts, surfaceTexture } from './surface-details.js?v=detail-6';
 
 // Hand-built from the user's front, rear and two profile reference images.
 // Face points down -Z. One shared template; four independent walking pivots.
@@ -20,7 +20,7 @@ function buildWoodenCharacter(detailed){
   const dark=material(0x60301d,.65),mouthMat=material(0x4b2018,.7);
   const cream=material(0xfff1d8,.27),iris=material(0x433323,.28),pupil=material(0x100f0d,.22);
   const shine=new THREE.MeshBasicMaterial({color:0xfff9e8});
-  const wood=material(0xd98b3e,.54);wood.vertexColors=true;
+  const wood=material(0xd98b3e,.54);wood.vertexColors=true;wood.map=surfaceTexture('grain');
   const add=(geometry,mat,x=0,y=0,z=0,parent=root)=>{const m=new THREE.Mesh(geometry,mat);m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;parent.add(m);return m};
   const sphere=(mat,x,y,z,sx,sy,sz,parent=root,segments=12)=>{const count=Math.max(8,segments-(detailed?2:4));const m=add(new THREE.SphereGeometry(1,count,Math.max(5,Math.round(count*.6))),mat,x,y,z,parent);m.scale.set(sx,sy,sz);return m};
   const curve=points=>new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
@@ -65,7 +65,8 @@ function buildWoodenCharacter(detailed){
   }
   bodyGeometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));bodyGeometry.computeVertexNormals();
   const body=add(bodyGeometry,wood);body.name='wooden-body';
-  const top=add(new THREE.CircleGeometry(.275,40),material(0xe7b46d,.68),0,2.446,0);top.rotation.x=-Math.PI/2;
+  const end=material(0xe7b46d,.68);end.map=surfaceTexture('endgrain');
+  const top=add(new THREE.CircleGeometry(.275,40),end,0,2.446,0);top.rotation.x=-Math.PI/2;
   const faceStart=root.children.length;
 
   for(const side of [-1,1]){

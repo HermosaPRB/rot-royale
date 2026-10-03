@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
+import { detailFactory } from './arena-details.js?v=polish-46';
 
 // The two lanes are deliberately opposite: neither spawn gets a permanent speed advantage.
 export const FACTORY_BELTS=[{x:-5.5,direction:-1,color:0x55d9ed},{x:5.5,direction:1,color:0xffb65e}];
@@ -178,6 +179,7 @@ export function buildMozzarellaFactory({world,colliders,shotBlockers,mat,ladders
   }
   // Only rigid architecture goes into shotBlockers. Steam is visual/AI concealment,
   // not an invisible bulletproof wall.
+  detailFactory(decor);
   mergeRigidParts(solid);
   solid.traverse(obj=>{if(obj.isMesh)shotBlockers.push(obj)});
   mergeRigidParts(decor);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeRigidParts } from './surface-details.js?v=detail-6';
+import { mergeRigidParts, surfaceTexture } from './surface-details.js?v=detail-6';
 
 // Original geometry built from the supplied front/profile/back turnaround.
 // Shared immutable geometry/materials; independent animation pivots per player.
@@ -14,9 +14,10 @@ export function createNeegyCharacter(detail='game'){
 }
 function buildNeegy(preview){
   const root=new THREE.Group();root.name='neegy';
-  const gold=new THREE.MeshStandardMaterial({color:0xe5ac24,metalness:.62,roughness:.3});
+  const gold=new THREE.MeshStandardMaterial({color:0xe5ac24,metalness:.55,roughness:.36});
   const light=new THREE.MeshStandardMaterial({color:0xf3c647,metalness:.55,roughness:.3});
   const cloth=new THREE.MeshStandardMaterial({color:0xc99827,metalness:.35,roughness:.48});
+  cloth.map=surfaceTexture('fabric');
   const shadow=new THREE.MeshStandardMaterial({color:0x735019,metalness:.35,roughness:.5});
   const eye=new THREE.MeshStandardMaterial({color:0xe8bd53,metalness:.45,roughness:.24});
   const n=preview?24:16;

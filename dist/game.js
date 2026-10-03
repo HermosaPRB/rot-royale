@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
-import { createWoodenCharacter } from './wooden-character.js?v=melee-10';
-import { createNeegyCharacter } from './neegy-character.js?v=face-30';
+import { createWoodenCharacter } from './wooden-character.js?v=polish-46';
+import { createNeegyCharacter } from './neegy-character.js?v=polish-46';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=gun-design-41';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
-import { buildNeonTown, createPickupMesh } from './neon-town.js?v=stair-entry-38';
-import { buildMozzarellaFactory, factoryConveyorAt, factorySteamBlocksSight, updateFactoryEffects } from './mozzarella-factory.js?v=factory-44';
+import { buildNeonTown, createPickupMesh } from './neon-town.js?v=polish-46';
+import { buildMozzarellaFactory, factoryConveyorAt, factorySteamBlocksSight, updateFactoryEffects } from './mozzarella-factory.js?v=polish-46';
 import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS } from './surf.js?v=surf-33';
 
 const $ = (id) => document.getElementById(id);
@@ -365,6 +365,8 @@ function createPlayerMesh(p,register=true,collisionOnly=false){
 if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)*47)%360)/360,.8,.62),halo=new THREE.Mesh(new THREE.RingGeometry(.58,.68,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));halo.rotation.x=-Math.PI/2;halo.position.y=.025;halo.userData.noHit=true;g.add(halo);g.userData.halo=halo;const band=new THREE.Mesh(new THREE.TorusGeometry(c.shape==='neegy'?.235:c.shape==='wooden'?.30:.54,.045,5,16),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.35,roughness:.5}));band.rotation.x=Math.PI/2;band.position.y=1.12;band.userData.noHit=true;(g.userData.avatar?.userData.danceTorso||g).add(band);if(g.userData.avatar)band.position.y-=.75}
   if(register){const tag=document.createElement('div');tag.className='name-tag';g.userData.tag=tag;world.add(g);playerMeshes.set(p.id,g)}return g;
 }
+// Bound animation cadence, never player velocity: fast bhops remain uncapped.
+function strideAdvance(speed,dt){return Math.min(16,Math.max(0,speed)*2.6)*Math.max(0,dt)}
 function syncMeshes(dt=1/60){
   const now=performance.now(),blend=1-Math.exp(-13*dt),poseBlend=1-Math.exp(-18*dt);
   const damp=(value,target,rate=18)=>THREE.MathUtils.lerp(value,target,1-Math.exp(-rate*dt));
@@ -376,24 +378,25 @@ function syncMeshes(dt=1/60){
     m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
     const yaw=p.yaw||0,turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
     const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);u.slide=damp(u.slide||0,p.sliding&&p.grounded!==false?1:0,p.sliding?19:11);
-    u.stride=(u.stride||0)+distance*(5.7+Math.min(3,u.speed*.18));
+    if(teleport){u.speed=0;u.walk=0;u.landAt=-Infinity;u.wasGround=p.grounded}
+    u.stride=((u.stride||0)+strideAdvance(u.speed,dt)*(1-u.air)*(1-u.slide))%(Math.PI*2);
     const avatar=u.avatar,elapsed=now-(meleeVisuals.get(p.id)??-Infinity),swing=elapsed>=0&&elapsed<MELEE.duration&&p.alive!==false;
     const holding=p.equipped==='bat';u.gun.visible=!swing&&!holding;u.bat.visible=swing||holding;
     const flinch=reaction?Math.max(0,1-(now-reaction.time)/380):0,deathT=reaction?.killed?smoothStep(Math.min(1,deathAge/650)):0;
-    const sideSpeed=teleport?0:(dx*Math.cos(yaw)-dz*Math.sin(yaw))/Math.max(dt,.001),turnLean=clamp(turn*1.2,-.13,.13),moveLean=clamp(sideSpeed*.006,-.08,.08),hitPitch=-Math.sin(flinch*Math.PI)*(reaction?.headshot?.16:.07);
+    const sideSpeed=teleport?0:(dx*Math.cos(yaw)-dz*Math.sin(yaw))*blend/Math.max(dt,.001),turnLean=clamp(turn*.35,-.055,.055)*u.walk,moveLean=clamp(sideSpeed*.006,-.06,.06),hitPitch=-Math.sin(flinch*Math.PI)*(reaction?.headshot?.16:.07);
     m.rotation.x=damp(m.rotation.x,reaction?.killed?Math.PI/2*deathT:hitPitch,reaction?.killed?10:22);m.rotation.z=damp(m.rotation.z,reaction?.killed?0:Math.sin(flinch*Math.PI)*.045-turnLean-moveLean,15);
     if(reaction?.killed)m.position.y=y-.6*deathT;
     if(u.wasGround===false&&p.grounded!==false)u.landAt=now;u.wasGround=p.grounded;
     const landAge=now-(u.landAt??-Infinity),landing=landAge<260?Math.sin(Math.min(1,landAge/260)*Math.PI):0,slide=u.slide;
     m.scale.y=damp(m.scale.y,1-slide*.05-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
     // Breathing, recoil and footfalls use damped values so low-rate network snapshots never pop.
-    const step=Math.sin(u.stride),lift=Math.sin(now*.002+p.id.length)*.006+Math.abs(step)*.017*u.walk-landing*.055;
+    const step=Math.sin(u.stride),gait=u.walk*(1-u.air)*(1-slide),lift=Math.sin(now*.002+p.id.length)*.006+(1-Math.cos(u.stride*2))*.009*gait-landing*.055;
     const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*(WEAPON_FEEL[p.weapon]?.remoteKick??.085):0;
     if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
     u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05-slide*.18,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:-slide*.12,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.10,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
     if(avatar){avatar.position.y=damp(avatar.position.y,lift-slide*.22,20);
-      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,0,12);torso.position.y=damp(torso.position.y,.75-slide*.18,16);torso.position.z=damp(torso.position.z,-slide*.12,16);torso.rotation.x=damp(torso.rotation.x,-slide*.54,16);torso.rotation.y=damp(torso.rotation.y,0,12);torso.rotation.z=damp(torso.rotation.z,0,12)}
+      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,step*.008*gait,12);torso.position.y=damp(torso.position.y,.75-slide*.18,16);torso.position.z=damp(torso.position.z,-slide*.12,16);torso.rotation.x=damp(torso.rotation.x,-slide*.54-landing*.055,16);torso.rotation.y=damp(torso.rotation.y,step*.012*gait*(p.aiming?.25:1),12);torso.rotation.z=damp(torso.rotation.z,-step*.012*gait,12)}
       avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air)*(1-slide),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12)+slide*(i?.82:-.66);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045)+slide*(i?-.11:.11),18)});
       avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk*(1-slide);let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}targetX+=slide*(i?-.26:.42);targetZ+=slide*(i?-.10:.12);arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
     }
@@ -746,9 +749,9 @@ function updateWeaponMotion(dt,now){
   if(state.reloading&&now-state.reloadStart>=w.reload){state.ammo=w.mag;state.reserve=Infinity;state.reloading=false;updateWeaponModel()}
   if(isPlaying()&&!state.reloading&&state.ammo===0&&now-state.lastShot>160)reload();
   if(!rig)return;
-  const m=weaponMotion,blend=1-Math.exp(-12*dt),active=isPlaying(),moving=active&&state.onGround&&Math.hypot(camera.position.x-(m.x??camera.position.x),camera.position.z-(m.z??camera.position.z))>.001;
+  const m=weaponMotion,blend=1-Math.exp(-12*dt),active=isPlaying(),distance=Math.hypot(camera.position.x-(m.x??camera.position.x),camera.position.z-(m.z??camera.position.z)),moving=active&&state.onGround&&distance>.001;
   m.x=camera.position.x;m.z=camera.position.z;
-  m.walk=THREE.MathUtils.lerp(m.walk,moving?1:0,blend);m.phase+=dt*(moving?10:3);
+  m.walk=THREE.MathUtils.lerp(m.walk,moving?Math.min(1,distance/Math.max(dt,.001)/5):0,blend);m.phase+=moving?strideAdvance(distance/Math.max(dt,.001),dt):dt*2;
   const dy=m.yaw===null?0:Math.atan2(Math.sin(camera.rotation.y-m.yaw),Math.cos(camera.rotation.y-m.yaw)),dp=m.pitch===null?0:camera.rotation.x-m.pitch;
   m.yaw=camera.rotation.y;m.pitch=camera.rotation.x;
   m.swayX=THREE.MathUtils.lerp(m.swayX,clamp(dy*.18/Math.max(dt,.001),-.05,.05),blend);m.swayY=THREE.MathUtils.lerp(m.swayY,clamp(dp*.12/Math.max(dt,.001),-.035,.035),blend);
