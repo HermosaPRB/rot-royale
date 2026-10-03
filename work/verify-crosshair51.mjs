@@ -20,6 +20,12 @@ const ar=gapOf('ar'),smg=gapOf('smg'),shotgun=gapOf('shotgun');
 assert.equal(ch().className,'crosshair ch-shotgun');
 assert.ok(ar<smg&&smg<shotgun,`AR smallest, shotgun biggest (${ar} ${smg} ${shotgun})`);
 reset('sniper');run('state.velocityX=8;updateCrosshair(performance.now())');const moving=parseFloat(ch().style['--gap']);
+assert.equal(run('WEAPONS.sniper.damage'),95,'sniper body damage buff');
+assert.equal(run('WEAPONS.sniper.rate'),780,'sniper follow-up shot buff');
+assert.equal(run('AIM_PROFILES.sniper.raise'),.20,'sniper scope-in buff');
+run('state.aiming=true;updateAim(.20)');
+assert.equal(run('state.aimBlend'),1,'sniper reaches full zoom in 200ms');
+run('resetAim()');
 run('state.velocityX=0');for(let i=0;i<60;i++){now+=16;run('updateCrosshair(performance.now())')}
 const still=parseFloat(ch().style['--gap']);
 assert.ok(moving>15&&still<moving/2,`sniper ${moving}px moving → ${still}px still`);

@@ -59,7 +59,7 @@ const CHARACTERS = [
 const WEAPONS = {
   ar:{name:'Espresso AR',icon:'☕',automatic:true,damage:18,rate:115,mag:30,reserve:90,reload:1450,spread:.006,pellets:1,range:72,color:0xe85b39,move:1},
   shotgun:{name:'Biscotti Boomstick',icon:'🥨',damage:10,rate:720,mag:6,reserve:30,reload:1900,spread:.085,pellets:10,range:22,color:0xd9ad6b,move:.94},
-  sniper:{name:'Lungo Sniper',icon:'🥄',damage:82,rate:1050,mag:5,reserve:20,reload:2100,spread:.09,adsSpread:.0005,pellets:1,range:120,color:0x39bfc2,move:.88},
+  sniper:{name:'Lungo Sniper',icon:'🥄',damage:95,rate:780,mag:5,reserve:20,reload:1900,spread:.09,adsSpread:.0005,pellets:1,range:120,color:0x39bfc2,move:.92},
   smg:{name:'Ristretto SMG',icon:'⚡',automatic:true,damage:11,rate:72,mag:40,reserve:120,reload:1350,spread:.015,pellets:1,range:52,color:0xea4f8f,move:1.14}
 };
 
@@ -196,7 +196,7 @@ const AIM_PROFILES={
   ar:{fov:58,raise:.20,lower:.14,kick:.052,settle:17,label:'IRON SIGHTS'},
   smg:{fov:64,raise:.13,lower:.11,kick:.035,settle:22,label:'QUICK SIGHTS'},
   shotgun:{fov:68,raise:.24,lower:.16,kick:.09,settle:12,label:'BEAD SIGHT'},
-  sniper:{fov:22,raise:.34,lower:.17,kick:.075,settle:10,label:'4× SCOPE'}
+  sniper:{fov:22,raise:.20,lower:.16,kick:.075,settle:10,label:'4× SCOPE'}
 };
 // Per-gun identity. pitch/yaw: camera punch per shot (rad); recover: return speed once you stop firing;
 // bloom: spread added per sustained shot (host-authoritative); back/rise/roll/jitter: viewmodel motion.
@@ -226,7 +226,7 @@ function trackLobbyPointer(e){if(state.mode!=='home'||e.pointerType==='touch')re
 function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt),now=performance.now(),breath=Math.sin(now*.0022)*.006;lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);lobbyFighter.position.y=THREE.MathUtils.lerp(lobbyFighter.position.y,breath,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso){torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12+Math.sin(now*.0016)*.008,blend);torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,lobbyLook.x*.06,blend)}const gun=lobbyFighter.userData.gun;if(gun){gun.position.y=THREE.MathUtils.lerp(gun.position.y,(gun.userData.holdY||0)+breath*.8,blend);gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,Math.sin(now*.0018)*.006,blend)}}
 
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
-const weaponDescriptions={ar:'Climbs up-right / tap for pinpoint accuracy',shotgun:'10-pellet blast / huge kick + shoves you back',sniper:'Heavy punch / scope for precision',smg:'Jittery spray / +14% movement'};
+const weaponDescriptions={ar:'Climbs up-right / tap for pinpoint accuracy',shotgun:'10-pellet blast / huge kick + shoves you back',sniper:'Quick scope / hard-hitting precision shots',smg:'Jittery spray / +14% movement'};
 // Shared sensitivity keeps captured and embedded-browser mouse look consistent.
 const LOOK_RADIANS_PER_PIXEL=.00656;
 const colliders=[];
