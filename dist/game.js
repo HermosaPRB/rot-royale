@@ -1291,7 +1291,7 @@ function addFeed(text){if(!text)return;const d=document.createElement('div');d.t
 function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return{x:p[0],z:p[1]}}
 // ---------- Airdrop event + special weapons ----------
 // Host decides timing, loot and every hit. Clients only render the shared `drop` and ask to open or fire.
-const AIRDROP={BROLL:2000,RELEASE:1000,CHUTE:1300,LAND:9000,ALT:27,PLANE_SPEED:45,OPEN_RANGE:2.2,OPEN_HOLD:1500,MIN_DELAY:45000,MAX_DELAY:75000,BANNER:3500};
+const AIRDROP={BROLL:4000,RELEASE:1400,CHUTE:1700,LAND:10000,ALT:27,PLANE_SPEED:38,OPEN_RANGE:2.2,OPEN_HOLD:1500,MIN_DELAY:45000,MAX_DELAY:75000,BANNER:4500};
 const SPECIALS={
   rpg:{name:'Raptor RPG',mag:1,reserve:2,reload:2600,rate:500,spread:.004,range:80,color:0x56613a,move:.9,tier:0,speed:45,kind:'rocket'},
   toilet:{name:'Skibidi Toilet Gun',mag:5,reserve:0,reload:0,rate:650,spread:.004,range:60,color:0xefebe3,move:.95,tier:0,speed:28,kind:'orb'}
@@ -1412,13 +1412,13 @@ function pickBrollShot(){
   for(const dir of dirs)for(const dist of [24,18,30])for(const h of [3,7,12]){const pos=C.clone().addScaledVector(dir,dist);pos.y+=h;if(pointBlocked(pos)||!hasClearShot(pos,sky))continue;fallback??=pos;if(hasClearShot(pos,ground))return pos}
   return fallback||C.clone().addScaledVector(side,16).add(new THREE.Vector3(0,AIRDROP.ALT+8,0));
 }
-// The 2s cutscene: a low camera tracks the plane across the center, then tilts down onto the falling crate.
+// The 4s cutscene: a low camera tracks the plane, then follows the falling crate.
 function brollView(now){
   const t=now-drop.announcedAt,reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   brollCamera??=new THREE.PerspectiveCamera(50,camera.aspect,.1,500);if(brollCamera.aspect!==camera.aspect){brollCamera.aspect=camera.aspect;brollCamera.updateProjectionMatrix()}
   drop.shot??=pickBrollShot();brollCamera.position.copy(drop.shot);
-  if(!reduced)brollCamera.position.lerp(_dropB.set(drop.x,drop.shot.y,drop.z),.14*smoothStep(t/AIRDROP.BROLL));
-  const target=reduced?_dropA.set(drop.x,drop.y+AIRDROP.ALT*.5,drop.z):dropPlanePos(t,_dropA).lerp(dropCratePos(Math.max(t,AIRDROP.RELEASE)),smoothStep((t-950)/450));
+  if(!reduced)brollCamera.position.lerp(_dropB.set(drop.x,drop.shot.y,drop.z),.2*smoothStep(t/AIRDROP.BROLL));
+  const target=reduced?_dropA.set(drop.x,drop.y+AIRDROP.ALT*.5,drop.z):dropPlanePos(t,_dropA).lerp(dropCratePos(Math.max(t,AIRDROP.RELEASE)),smoothStep((t-1400)/1700));
   brollCamera.lookAt(target);weaponModel.visible=meleeModel.visible=false;return brollCamera;
 }
 

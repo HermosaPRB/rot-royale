@@ -37,10 +37,12 @@ for(const map of ['neon','piazza','factory']){
   run(`state.keys={KeyW:true};state.velocityX=9;updateMovement(1/60)`);assert.equal(run('state.velocityX'),0,`${map}: players frozen`);
   run(`state.players.enemy.x=5;state.players.enemy.z=3;state.players.host.yaw=0;resolveShot('host',performance.now())`);assert.equal(run('state.players.enemy.health'),100,`${map}: no damage during cinematic`);
   run(`state.keys={}`);tick(2100);
-  assert.ok(!run('airdropFrozen()'),`${map}: unfreezes after 2s`);assert.ok(run('gameplayCamera()===camera'),`${map}: back to player camera`);
+  assert.ok(run('airdropFrozen()'),`${map}: still frozen after 2s`);assert.ok(run('gameplayCamera()===brollCamera'),`${map}: cinematic continues past 2s`);
+  tick(1700);assert.ok(run('airdropFrozen()'),`${map}: still frozen just before 4s`);
+  tick(300);assert.ok(!run('airdropFrozen()'),`${map}: unfreezes after 4s`);assert.ok(run('gameplayCamera()===camera'),`${map}: back to player camera`);
   // 3. Crate falls, then lands on the real top surface at map center.
   assert.ok(run('drop.crate.visible&&!drop.landed&&drop.chute.visible'),`${map}: crate parachuting`);
-  tick(7200);assert.ok(run('drop.landed'),`${map}: crate landed`);
+  tick(6200);assert.ok(run('drop.landed'),`${map}: crate landed`);
   assert.equal(run('drop.crate.position.y'),run('landingHeight(drop.x,drop.z)'));assert.ok(run(`!colliders.some(c=>c!==drop.collider&&!c.ramp&&drop.x>c.minX&&drop.x<c.maxX&&drop.z>c.minZ&&drop.z<c.maxZ&&(c.maxY??Infinity)>drop.y+.05&&(c.minY??-Infinity)<drop.y+.9)`),`${map}: crate is not buried inside scenery`);assert.ok(run('colliders.includes(drop.collider)&&drop.beacon.visible'),`${map}: collider + beacon`);
   landings[map]=run('`(${drop.x.toFixed(1)}, ${drop.y.toFixed(2)}, ${drop.z.toFixed(1)})`');
   assert.ok(run(`sent.filter(m=>m.t==='airdrop').every(m=>m.drop.item===null)`),`${map}: no broadcast leaked the item`);
@@ -59,7 +61,7 @@ for(const map of ['neon','piazza','factory']){
 }
 
 // 5. RPG: falloff, line of sight, half self-damage, no self-kill credit, 3 rockets then back to the gun.
-match('neon');tick(9200);run(`resetAirdropState();sent.length=0;state.players.host.x=0;state.players.host.z=10;camera.position.set(0,1.7,10)`);
+match('neon');tick(10200);run(`resetAirdropState();sent.length=0;state.players.host.x=0;state.players.host.z=10;camera.position.set(0,1.7,10)`);
 run(`grantSpecial('rpg');specialOwners.set('host',{type:'rpg',ammo:3,last:-Infinity})`);
 assert.equal(run('state.special.type'),'rpg');assert.equal(run('state.ammo'),1);assert.equal(run('state.special.reserve'),2);
 assert.ok(!run(`[...document.getElementById('respawn-weapons').innerHTML.matchAll(/rpg|toilet/gi)].length`),'specials never offered on respawn');
@@ -96,7 +98,7 @@ for(const item of ['rpg','toilet']){
   match('neon');run(`airdropPlan.item='${item}';broadcast=m=>{sent.push(JSON.parse(JSON.stringify(m)));deliverClient(m)}`);
   clientRun(`resetAirdropState();setMap('neon');Object.assign(state,{id:'enemy',host:false,mode:'game',matchActive:true,alive:true,selectedWeapon:'ar',equipped:'gun',health:100,ammo:30,arsenal:{}});`);
   clientCtx.initialPlayers=JSON.parse(JSON.stringify(run('state.players')));clientRun('state.players=initialPlayers');
-  tick(9200);assert.ok(run('drop.landed'));assert.equal(run('publicDrop().item'),null,'host does not leak the loot before opening');
+  tick(10200);assert.ok(run('drop.landed'));assert.equal(run('publicDrop().item'),null,'host does not leak the loot before opening');
   ctx.deliverClient({t:'airdrop',drop:run('publicDrop()')});clientRun('updateAirdrop(.016,performance.now())');
   assert.ok(clientRun('drop.landed&&!drop.item'),`${item}: non-host sees landed crate but not item`);
   run(`state.players.enemy.x=drop.x+1;state.players.enemy.z=drop.z;state.players.enemy.y=drop.y+1.7;state.connections.set('enemy',{open:true,send:deliverClient});hostOpenStart('enemy')`);now+=1600;run(`hostOpenDrop('enemy')`);
@@ -105,4 +107,4 @@ for(const item of ['rpg','toilet']){
   run(`handleHostMessage({t:'specialFire'},'enemy')`);
   assert.equal(clientRun('projectiles.at(-1)?.kind'),item==='rpg'?'rocket':'orb',`${item}: non-host receives projectile`);
 }
-console.log(`PASS airdrop: 45-75s timing (mean ${(mean/1000).toFixed(1)}s), 2s frozen cinematic, landing y neon ${landings.neon} / piazza ${landings.piazza} / factory ${landings.factory}, secret loot, host-validated hold-to-open, RPG splash/LOS/self-damage/3 rockets, toilet vortex pull+ticks+pop, lost on death.`);
+console.log(`PASS airdrop: 45-75s timing (mean ${(mean/1000).toFixed(1)}s), 4s frozen cinematic, landing y neon ${landings.neon} / piazza ${landings.piazza} / factory ${landings.factory}, secret loot, host-validated hold-to-open, RPG splash/LOS/self-damage/3 rockets, toilet vortex pull+ticks+pop, lost on death.`);
