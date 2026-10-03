@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 
 // The two lanes are deliberately opposite: neither spawn gets a permanent speed advantage.
-export const FACTORY_BELTS=[{x:-6.5,direction:-1,color:0x55d9ed},{x:6.5,direction:1,color:0xffb65e}];
-export const FACTORY_STEAM=[{x:-6.5,z:-11,phase:0},{x:6.5,z:11,phase:3900}];
+export const FACTORY_BELTS=[{x:-5.5,direction:-1,color:0x55d9ed},{x:5.5,direction:1,color:0xffb65e}];
+export const FACTORY_STEAM=[{x:-5.5,z:-8,phase:0},{x:5.5,z:8,phase:3900}];
 const STEAM_PERIOD=8000,STEAM_DURATION=1900;
 let effects=null;
 
 export function factoryConveyorAt(x,z,foot=0){
-  if(Math.abs(foot)>.22||Math.abs(z)>23.5)return 0;
+  if(Math.abs(foot)>.22||Math.abs(z)>17.5)return 0;
   const lane=FACTORY_BELTS.find(b=>Math.abs(x-b.x)<1.75);
   return lane?lane.direction*7.5:0;
 }
@@ -30,8 +30,8 @@ export function updateFactoryEffects(now=Date.now()){
     material.opacity=.19+.045*Math.sin(now*.008+zone.phase);
   }
   for(const {mesh,lane,base} of effects.stripes){
-    const travel=(base+now*.006*lane.direction)%44;
-    mesh.position.z=-22+((travel+44)%44);
+    const travel=(base+now*.006*lane.direction)%34;
+    mesh.position.z=-17+((travel+34)%34);
   }
 }
 
@@ -58,84 +58,111 @@ export function buildMozzarellaFactory({world,colliders,shotBlockers,mat,ladders
   }
   // Solid perimeter and clearly readable ground. The opening-looking panels are scenery,
   // while every wall, vat, crate, and catwalk deck uses the same AABB rules as combat.
-  box(0,-.3,0,68,.6,70,M.floor);
-  box(-33.25,2.3,0,.9,4.6,70,M.wall,true);box(33.25,2.3,0,.9,4.6,70,M.wall,true);
-  box(0,2.3,-34,68,4.6,.9,M.wall,true);box(0,2.3,34,68,4.6,.9,M.wall,true);
-  for(const z of [-27,-18,-9,0,9,18,27]){
-    box(-32.7,4.25,z,.2,.15,2.8,G.cyan);box(32.7,4.25,z,.2,.15,2.8,G.orange);
+  box(0,-.3,0,48,.6,50,M.floor);
+  box(-23.6,3.5,0,.8,7,50,M.wall,true);box(23.6,3.5,0,.8,7,50,M.wall,true);
+  box(0,3.5,-24.6,48,7,.8,M.wall,true);box(0,3.5,24.6,48,7,.8,M.wall,true);
+  for(const z of [-20,-12,-4,4,12,20]){
+    box(-23.15,5.8,z,.2,.15,2.8,G.cyan);box(23.15,5.8,z,.2,.15,2.8,G.orange);
   }
-  for(const x of [-26,-13,0,13,26]){
-    box(x,4.25,-33.5,3,.15,.2,G.cyan);box(x,4.25,33.5,3,.15,.2,G.orange);
+  for(const x of [-18,-9,0,9,18]){
+    box(x,5.8,-24.15,2.6,.15,.2,G.cyan);box(x,5.8,24.15,2.6,.15,.2,G.orange);
   }
   // Conveyor movement and animation share FACTORY_BELTS, so the rendered direction
   // cannot drift away from the movement direction.
   const stripes=[];
   for(const lane of FACTORY_BELTS){
-    box(lane.x,.045,0,3.65,.09,47,M.dark);
-    box(lane.x-1.9,.16,0,.13,.25,47,M.steel);box(lane.x+1.9,.16,0,.13,.25,47,M.steel);
+    box(lane.x,.045,0,3.3,.09,35,M.dark);
+    box(lane.x-1.7,.16,0,.13,.25,35,M.steel);box(lane.x+1.7,.16,0,.13,.25,35,M.steel);
     const stripeMat=lane.direction<0?G.cyan:G.orange;
-    for(let i=0;i<12;i++){
-      const mesh=new THREE.Mesh(new THREE.BoxGeometry(2.65,.018,.15),stripeMat);
-      mesh.position.set(lane.x,.11,-22+i*3.7);dynamic.add(mesh);stripes.push({mesh,lane,base:i*3.7});
+    for(let i=0;i<10;i++){
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(2.35,.018,.15),stripeMat);
+      mesh.position.set(lane.x,.11,-17+i*3.4);dynamic.add(mesh);stripes.push({mesh,lane,base:i*3.4});
     }
-    for(const z of [-24,24]){box(lane.x,.14,z,3.9,.25,.38,M.yellow);box(lane.x,.29,z,3.2,.06,.12,stripeMat)}
+    for(const z of [-17.6,17.6]){box(lane.x,.14,z,3.6,.25,.38,M.yellow);box(lane.x,.29,z,2.9,.06,.12,stripeMat)}
   }
   // The vat is substantial central cover, but both belts and side flanks bypass it.
-  cylinder(0,1.36,0,3.1,2.72,M.vat,true);
-  cylinder(0,2.8,0,3.32,.24,M.ivory,true);
-  cylinder(0,2.99,0,2.55,.11,M.dark);
-  for(let i=0;i<8;i++){const a=i*Math.PI/4;cylinder(Math.cos(a)*2.82,3.03,Math.sin(a)*2.82,.12,.14,G.white)}
-  for(const z of [-15,15]){
-    cylinder(0,.95,z,1.35,1.9,M.vat,true);cylinder(0,1.97,z,1.48,.16,M.ivory,true);
+  cylinder(0,1.28,0,2.5,2.56,M.vat,true);
+  cylinder(0,2.65,0,2.7,.2,M.ivory,true);
+  cylinder(0,2.8,0,2.04,.09,M.dark);
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;cylinder(Math.cos(a)*2.3,2.85,Math.sin(a)*2.3,.1,.13,G.white)}
+  for(const z of [-19.6,19.6]){
+    cylinder(0,.95,z,1.15,1.9,M.vat,true);cylinder(0,1.97,z,1.27,.16,M.ivory,true);
     box(0,1.15,z,2.8,.12,.1,G.orange);
   }
-  // The elevated bridge can be climbed from either side. Rails are real cover; gaps
-  // are left at the ladder exits to avoid invisible blockers at the top.
-  box(0,4.1,0,23.5,.32,3.8,M.steel,true);
-  for(const z of [-2.0,2.0]){
-    for(const x of [-8,-4,0,4,8])box(x,4.63,z,3.2,.68,.16,M.edge,true);
-    for(const x of [-11,11])box(x,4.7,z,.15,.92,.15,M.edge);
-  }
-  for(const x of [-10.8,10.8])for(const z of [-1.65,1.65]){
-    box(x,2.0,z,.62,4,.62,M.steel,true);box(x,2.4,z,.64,.11,.64,G.cyan);
-  }
+  // Second floor: two long, fully collidable mezzanines. Ground-level rooms remain
+  // traversable underneath, so players can flank below or fight above.
   for(const side of [-1,1]){
-    const x=side*12.3;
-    ladders.push({x,z:0,bottom:0,top:4.26,exitX:side*10.2,exitZ:0});
-    box(x,2.1,-.4,.12,4.2,.12,M.yellow);box(x,2.1,.4,.12,4.2,.12,M.yellow);
-    for(let y=.45;y<4.2;y+=.48)box(x,y,0,.12,.095,.85,M.ivory);
-    box(x,4.55,0,1.5,.14,1.25,G.cyan);
+    const x=side*15;
+    box(x,3.08,0,9,.28,19,M.steel,true); // top at 3.22
+    box(x,3.26,0,8.5,.045,18.5,M.edge);
+    for(const z of [-8.8,8.8])for(const support of [11.3,18.7]){
+      box(side*support,1.46,z,.58,2.92,.58,M.steel,true);
+      box(side*support,2.6,z,.64,.11,.64,G.cyan);
+    }
+    // Waist-high edge cover has intentional gaps at the ladder approaches.
+    for(const z of [-5,5])box(side*10.48,3.64,z,.18,.84,5.5,M.edge,true);
+    box(side*19.52,3.64,0,.18,.84,18.5,M.edge,true);
+    for(const z of [-9.45,9.45])box(x,3.61,z,9,.78,.16,M.edge,true);
+    for(const z of [-4.5,4.5]){
+      box(side*16.5,3.62,z,1.9,.8,1.45,M.crate,true);
+      box(side*16.5,4.06,z,1.98,.06,1.55,G.orange);
+    }
+    for(const z of [-7.1,7.1]){
+      const ladderX=side*10.05;
+      ladders.push({x:ladderX,z,bottom:0,top:3.22,exitX:side*12.1,exitZ:z});
+      box(ladderX,1.65,z-.43,.12,3.3,.12,M.yellow);
+      box(ladderX,1.65,z+.43,.12,3.3,.12,M.yellow);
+      for(let y=.4;y<3.2;y+=.47)box(ladderX,y,z,.12,.09,.9,M.ivory);
+      box(side*12.1,3.35,z,.8,.08,.8,G.cyan);
+    }
+    // The next ladder starts on this floor; it cannot be grabbed from the ground.
+    const upperX=side*10.05;
+    ladders.push({x:upperX,z:0,bottom:3.22,top:6.22,exitX:side*8.25,exitZ:0});
+    box(upperX,4.75,-.43,.12,3,.12,M.yellow);
+    box(upperX,4.75,.43,.12,3,.12,M.yellow);
+    for(let y=3.5;y<6.2;y+=.47)box(upperX,y,0,.12,.09,.9,M.ivory);
+    // Lower rooms use staggered machines, not sealed facades or invisible doors.
+    box(side*17,.025,0,7.8,.05,17.6,M.edge);
+    box(side*17,1.0,-3.1,2.2,2,2.0,M.vat,true);
+    box(side*17,1.0,3.1,2.2,2,2.0,M.crate,true);
+    box(side*19,.75,0,1.55,1.5,2.4,M.steel,true);
+    box(side*19,1.02,0,.09,.58,1.5,G.cyan);
   }
-  // Four offset production bays form safer but slower flanks, with broad entrances.
-  for(const side of [-1,1])for(const row of [-1,1]){
-    const x=side*22,z=row*13;
-    box(x,.025,z,12,.05,13,M.edge);
-    box(x+side*6.1,1.55,z,.55,3.1,12,M.wall,true);
-    box(x,1.55,z+row*6.35,12,3.1,.55,M.wall,true);
-    box(x,3.38,z,12,.22,13,M.dark,true);
-    box(x,3.55,z,10,.06,.28,row<0?G.cyan:G.orange);
-    box(x-side*2.6,.68,z-row*1.2,2.6,1.36,2.2,M.crate,true);
-    box(x+side*2.5,.5,z+row*1.5,2.1,1.0,1.9,M.vat,true);
-    box(x+side*2.5,1.06,z+row*1.5,2.2,.1,2,G.white);
-    box(x-side*3,1.75,z+row*4,1.5,1.7,.55,M.steel,true);
-    box(x-side*3,1.88,z+row*3.7,.85,.75,.07,G.cyan);
+  // Third floor: a high bridge connects the two mezzanines above the vat.
+  box(0,6.08,0,19.2,.28,3.1,M.steel,true); // top at 6.22
+  for(const z of [-1.62,1.62]){
+    for(const x of [-6.5,-2,2,6.5])box(x,6.67,z,3.1,.9,.16,M.edge,true);
+    for(const x of [-8.8,8.8])box(x,6.65,z,.14,.85,.14,M.yellow);
   }
-  // Mid-height machinery creates cover without closing the central sightlines.
-  for(const [x,z,turn] of [[-13,-10,0],[13,10,0],[-13,10,1],[13,-10,1]]){
-    box(x,.9,z,turn?2.4:1.7,1.8,turn?1.7:2.4,M.steel,true);
-    box(x,1.84,z,turn?2.6:1.9,.12,turn?1.9:2.6,M.ivory);
-    box(x,1.1,z+(turn?.88:1.23),.6,.4,.07,G.orange);
+  for(const x of [-3.7,3.7]){
+    box(x,6.61,0,1.45,.78,1.25,M.dark,true);
+    box(x,7.03,0,1.55,.06,1.35,G.orange);
   }
-  for(const x of [-28,28]){
-    pipe(x,4.4,0,.22,55,'z',M.vat);
-    for(const z of [-25,-15,-5,5,15,25]){
-      pipe(x,2.9,z,.12,2.9,'y',M.steel);
-      box(x,4.15,z,.5,.2,.5,G.white);
+  for(const x of [-8.5,8.5])for(const z of [-1.2,1.2]){
+    box(x,4.7,z,.44,2.7,.44,M.steel,true);
+    box(x,5.8,z,.5,.09,.5,G.cyan);
+  }
+  // Denser ground cover: stacked pallets, fermentation tanks and angled consoles.
+  // The belt centers and every ladder approach stay clear.
+  for(const [x,z,w,d,h] of [
+    [-10,-14,2.5,2.2,1.7],[10,14,2.5,2.2,1.7],[-10,13,2.1,2.7,2.1],[10,-13,2.1,2.7,2.1],
+    [-15,-15,2.7,2.4,1.3],[15,15,2.7,2.4,1.3],[-15,15,2.7,2.4,1.3],[15,-15,2.7,2.4,1.3],
+    [-18,-2,2.3,1.8,1.6],[18,2,2.3,1.8,1.6],[-18,6,1.8,2.3,1.4],[18,-6,1.8,2.3,1.4]
+  ]){
+    box(x,h/2,z,w,h,d,M.crate,true);
+    box(x,h+.06,z,w+.1,.12,d+.1,M.ivory);
+    box(x,h*.58,z+d/2+.045,w*.62,.18,.07,G.orange);
+  }
+  for(const x of [-21.3,21.3]){
+    pipe(x,6.4,0,.19,38,'z',M.vat);
+    for(const z of [-18,-9,0,9,18]){
+      pipe(x,4.3,z,.1,4.3,'y',M.steel);
+      box(x,6.25,z,.45,.16,.45,G.white);
     }
   }
-  for(const z of [-21,21]){
-    pipe(0,5.2,z,.15,50,'x',M.steel);
-    for(const x of [-15,0,15])box(x,5.03,z,2.4,.12,.4,G.white);
+  for(const z of [-18.5,18.5]){
+    pipe(0,6.85,z,.14,39,'x',M.steel);
+    for(const x of [-14,0,14])box(x,6.68,z,2.3,.11,.34,G.white);
   }
   const steam=[];
   for(const zone of FACTORY_STEAM){

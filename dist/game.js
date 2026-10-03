@@ -6,7 +6,7 @@ import { createNeegyCharacter } from './neegy-character.js?v=face-30';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=gun-design-41';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
 import { buildNeonTown, createPickupMesh } from './neon-town.js?v=stair-entry-38';
-import { buildMozzarellaFactory, factoryConveyorAt, factorySteamBlocksSight, updateFactoryEffects } from './mozzarella-factory.js?v=factory-43';
+import { buildMozzarellaFactory, factoryConveyorAt, factorySteamBlocksSight, updateFactoryEffects } from './mozzarella-factory.js?v=factory-44';
 import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS } from './surf.js?v=surf-33';
 
 const $ = (id) => document.getElementById(id);
@@ -203,7 +203,7 @@ const colliders=[];
 const ladders=[];
 const shotBlockers=[];
 const materials=new Map();
-const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},factory:{name:'MIDNIGHT MOZZARELLA',description:'Twin conveyors · vat cover · catwalk · steam flanks',spawns:[[-27,-26],[27,26],[-27,26],[27,-26],[0,-29],[0,29]],pickups:[['case',-27,0],['case',27,0],['health',0,-25],['health',0,25]],sky:0x142b43},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
+const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},factory:{name:'MIDNIGHT MOZZARELLA',description:'Compact three-floor factory · twin belts · dense machinery cover',spawns:[[-18,-20],[18,20],[-18,20],[18,-20],[0,-22],[0,22]],pickups:[['case',-21.5,0],['case',21.5,0],['health',0,-22],['health',0,22]],sky:0x142b43},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
 const RARITIES=[{name:'STANDARD',color:0xb9c5d1,damage:1,rate:1,reload:1},{name:'RARE',color:0x5bbbff,damage:1.06,rate:.97,reload:.96},{name:'EPIC',color:0xcf83ff,damage:1.12,rate:.94,reload:.92},{name:'LEGENDARY',color:0xffce62,damage:1.18,rate:.90,reload:.88}];
 const CYBER_NAMES={ar:'Ion Pulse AR',shotgun:'Nova Scattergun',sniper:'Prism Rail Sniper',smg:'Volt Shredder'};
 const pickupMeshes=new Map(),mapCache=new Map();let builtMap=null;
@@ -871,7 +871,7 @@ function updateMovement(dt){
 function moveSweptAxis(axis,delta){
   // Check the entire path, not just the endpoint: uncapped speed cannot skip thin cover.
   // Ordered contacts allow a staircase to be climbed even during a fast frame.
-  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?220:(axis==='x'?34:35);
+  if(!delta)return;const other=axis==='x'?'z':'x',suffix=axis.toUpperCase(),cross=other.toUpperCase(),old=camera.position[axis],side=camera.position[other],bound=state.map==='surf'?220:state.map==='factory'?(axis==='x'?24:25):(axis==='x'?34:35);
   const requested=old+delta;let next=clamp(requested,-bound,bound);
   const radius=c=>c.stair&&(axis==='z'||c.stairEntrance)?0:.55;
   const crossRadius=c=>c.stair&&axis==='x'?0:.55;
@@ -1126,7 +1126,7 @@ function updateBots(dt){
       // No target: wander to fresh goals, pause to look around, hop while traveling.
       p.aiming=false;
       if(now>=b.goalUntil||Math.hypot(b.goalX-p.x,b.goalZ-p.z)<1.8){
-        for(let t=0;t<8;t++){const hx=(Math.random()*2-1)*27,hz=(Math.random()*2-1)*27;if(!collides(hx,hz)){b.goalX=hx;b.goalZ=hz;break}}
+        for(let t=0;t<8;t++){const hx=(Math.random()*2-1)*(state.map==='factory'?20:27),hz=(Math.random()*2-1)*(state.map==='factory'?21:27);if(!collides(hx,hz)){b.goalX=hx;b.goalZ=hz;break}}
         b.goalUntil=now+2600+Math.random()*3200;
         b.pauseUntil=Math.random()<.35?now+450+Math.random()*700:0;
         b.lookYaw=(Math.random()*2-1)*Math.PI;
@@ -1147,7 +1147,7 @@ function updateBots(dt){
       for(const q of bots)if(q!==p){const ox=p.x-q.x,oz=p.z-q.z,d=Math.hypot(ox,oz);if(d<1.6&&d>.01){wx+=ox/d*(1.6-d)*3;wz+=oz/d*(1.6-d)*3}}
       b.vx=THREE.MathUtils.lerp(b.vx,wx,1-Math.exp(-7*dt));b.vz=THREE.MathUtils.lerp(b.vz,wz,1-Math.exp(-7*dt));
       const attempts=[[b.vx,b.vz],[b.vz,-b.vx],[-b.vz,b.vx],[-b.vx,-b.vz]];let moved=false;
-      for(const [vx,vz] of attempts){const nx=clamp(p.x+vx*dt,-31.5,31.5),nz=clamp(p.z+vz*dt,-31.5,31.5);if(!collides(nx,nz)){p.x=nx;p.z=nz;moved=true;break}}
+      for(const [vx,vz] of attempts){const bx=state.map==='factory'?21.8:31.5,bz=state.map==='factory'?22.8:31.5,nx=clamp(p.x+vx*dt,-bx,bx),nz=clamp(p.z+vz*dt,-bz,bz);if(!collides(nx,nz)){p.x=nx;p.z=nz;moved=true;break}}
       b.stuck=moved?Math.max(0,b.stuck-dt*2):b.stuck+dt;
       if(b.stuck>.3){b.detour=Math.random()<.5?1:-1;b.detourUntil=now+500+Math.random()*500;b.stuck=0;if(Math.random()<.6){b.jumpStart=now;b.jumpUntil=now+650}}
     }else{b.vx*=.8;b.vz*=.8;b.stuck=0}
@@ -1274,7 +1274,7 @@ function updateLobbyModeUI(){
   $('practice').querySelector('span').textContent=surf?'Start Surfing':'Practice';
   $('practice').querySelector('small').textContent=surf?'Four-stage skill course · no combat':'Play against bots';
   $('match-badge').innerHTML=surf?'Solo <span>CS-style surf</span>':'Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':state.map==='factory'?'Ride the twin belts. Jump to keep momentum. Steam hides players; it does not stop bullets. Most eliminations wins.':'Most eliminations wins. Respawn and keep playing.';
+  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':state.map==='factory'?'Three floors: climb E-ladders from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
   $('win-rule').textContent=surf?'Reach the gold finish gate. Falling returns you to the latest checkpoint.':'Most eliminations in 3 minutes wins.';
 }
 renderKeybinds();buildChoices();initWorld();showScreen('home');
