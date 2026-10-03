@@ -354,7 +354,7 @@ function updateWeaponModel(){
 }
 
 function createPlayerMesh(p,register=true,collisionOnly=false){
-  const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;
+  const c=CHARACTERS.find(x=>x.id===p.char)||CHARACTERS[0],g=new THREE.Group();g.userData.playerId=p.id;g.userData.characterShape=c.shape;
   if(c.shape==='wooden'||c.shape==='neegy'){
     const avatar=(c.shape==='neegy'?createNeegyCharacter:createWoodenCharacter)(register||collisionOnly?'game':'preview');g.add(avatar);g.userData.avatar=avatar;
     const torso=new THREE.Group();torso.position.y=.75;torso.name='dance-torso';
@@ -365,13 +365,20 @@ function createPlayerMesh(p,register=true,collisionOnly=false){
   const head=new THREE.Mesh(new THREE.SphereGeometry(.52,14,10),mat(c.color));head.position.y=2.05;head.castShadow=true;head.userData.playerId=p.id;g.add(head);
   const eyeMat=new THREE.MeshBasicMaterial({color:0x191218});[-.2,.2].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),eyeMat);e.position.set(x,2.12,-.48);g.add(e)});
   }
-  const tier=weaponTier(p.weapon,p.arsenal||{}),gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon]?.color||0x333333,p.weapon||'ar',!register&&!collisionOnly,tier);g.add(gun);
+  const tier=weaponTier(p.weapon,p.arsenal||{}),gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon]?.color||0x333333,p.weapon||'ar',!register&&!collisionOnly,tier);poseHeldGun(gun,c.shape);g.add(gun);
   const bat=c.shape==='neegy'?createMeleeKnife():createMeleeBat();bat.visible=false;
   if(g.userData.avatar){const grip=g.userData.avatar.getObjectByName('trigger-hand');grip.add(bat);bat.position.y=-.13;bat.rotation.x=-.25}else{g.add(bat);bat.position.set(.35,1.25,-.45)}
   g.userData.bat=bat;g.traverse(m=>{if(m.isMesh)m.userData.playerId=p.id});
   g.userData.gun=gun;g.userData.weaponType=p.weapon;g.userData.weaponTier=tier;
 if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)*47)%360)/360,.8,.62),halo=new THREE.Mesh(new THREE.RingGeometry(.58,.68,24),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));halo.rotation.x=-Math.PI/2;halo.position.y=.025;halo.userData.noHit=true;g.add(halo);g.userData.halo=halo;const band=new THREE.Mesh(new THREE.TorusGeometry(c.shape==='neegy'?.235:c.shape==='wooden'?.30:.54,.045,5,16),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.35,roughness:.5}));band.rotation.x=Math.PI/2;band.position.y=1.12;band.userData.noHit=true;(g.userData.avatar?.userData.danceTorso||g).add(band);if(g.userData.avatar)band.position.y-=.75}
   if(register){const tag=document.createElement('div');tag.className='name-tag';g.userData.tag=tag;world.add(g);playerMeshes.set(p.id,g)}return g;
+}
+function poseHeldGun(gun,shape){
+  if(shape==='wooden'||shape==='neegy'){
+    // Swing the stock outside the torso while the receiver stays between the hands.
+    gun.position.x=.22;
+    gun.rotation.y=.48;
+  }
 }
 // Bound animation cadence, never player velocity: fast bhops remain uncapped.
 function strideAdvance(speed,dt){return Math.min(16,Math.max(0,speed)*2.6)*Math.max(0,dt)}
@@ -380,7 +387,7 @@ function syncMeshes(dt=1/60){
   const damp=(value,target,rate=18)=>THREE.MathUtils.lerp(value,target,1-Math.exp(-rate*dt));
   Object.values(state.players).forEach(p=>{
     if(p.id===state.id)return;const m=playerMeshes.get(p.id)||createPlayerMesh(p),u=m.userData,reaction=p.alive!==false&&hitReactions.get(p.id)?.killed?null:hitReactions.get(p.id),deathAge=reaction?.killed?now-reaction.time:Infinity;m.visible=p.alive!==false||deathAge<650;
-    const tier=weaponTier(p.weapon,p.arsenal||{});if(WEAPONS[p.weapon]&&(u.weaponType!==p.weapon||u.weaponTier!==tier)){m.remove(u.gun);u.gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon].color,p.weapon,false,tier);u.gun.traverse(part=>{if(part.isMesh)part.userData.playerId=p.id});m.add(u.gun);u.weaponType=p.weapon;u.weaponTier=tier}
+    const tier=weaponTier(p.weapon,p.arsenal||{});if(WEAPONS[p.weapon]&&(u.weaponType!==p.weapon||u.weaponTier!==tier)){m.remove(u.gun);u.gun=createHeldGun(tier?RARITIES[tier].color:WEAPONS[p.weapon].color,p.weapon,false,tier);poseHeldGun(u.gun,u.characterShape);u.gun.traverse(part=>{if(part.isMesh)part.userData.playerId=p.id});m.add(u.gun);u.weaponType=p.weapon;u.weaponTier=tier}
     const x=p.x||0,z=p.z||0,dx=x-m.position.x,dz=z-m.position.z,teleport=!u.initialized||Math.hypot(dx,dz)>12;
     const distance=teleport?0:Math.hypot(dx,dz)*blend,y=Math.max(0,(p.y??1.7)-1.7);
     m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
