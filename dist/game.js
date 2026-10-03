@@ -470,7 +470,7 @@ function peerError(err){const msg=err.type==='peer-unavailable'?'Room not found.
 function resetPeer(){if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
 function setError(s){$('connection-error').textContent=s}
 
-function enterLobby(){state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' is warming up.';updateLobby()}
+function enterLobby(){state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby()}
 function updateLobby(){
   const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
   $('start-match').style.display=state.host?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
