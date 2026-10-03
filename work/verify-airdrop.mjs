@@ -80,7 +80,8 @@ assert.equal(run('state.special'),null,'RPG gone after 3 rockets');assert.equal(
 
 // 6. Toilet gun: charged shot, pull, tick damage, pop.
 run(`grantSpecial('toilet');specialOwners.set('host',{type:'toilet',ammo:5,last:-Infinity});state.lastShot=-Infinity`);assert.equal(run('state.ammo'),5);
-run('shoot()');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'toilet gun charges before firing');now+=400;run('updateSpecial(performance.now())');assert.ok(run(`sent.some(m=>m.t==='proj'&&m.kind==='orb')`),'orb fires after the charge');
+assert.equal(run('SPECIALS.toilet.speed'),36,'buffed orb travels faster');assert.equal(run('VORTEX.direct'),45,'buffed direct hit');assert.equal(run('VORTEX.pull'),20,'buffed vortex pull');
+run('shoot()');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'toilet gun charges before firing');now+=200;run('updateSpecial(performance.now())');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'orb does not fire before 250ms');now+=80;run('updateSpecial(performance.now())');assert.ok(run(`sent.some(m=>m.t==='proj'&&m.kind==='orb')`),'orb fires after the shorter charge');
 run(`for(const pr of [...projectiles])removeProjectile(pr);state.players.enemy={...state.players.enemy,health:100,alive:true,x:1,y:1.7,z:-30};state.velocityX=state.velocityZ=0;camera.position.set(2.5,1.7,-30);spawnVortex({id:99,x:0,y:.85,z:-30,owner:'host'},true);spawnVortex({id:98,x:0,y:.85,z:-30,owner:'enemy'},false)`);
 tick(400);assert.ok(run('state.velocityX')<-.5,'vortex pulls you toward its center');
 assert.ok(run('state.players.enemy.health')<100&&run('state.players.enemy.health')>90,'vortex tick damage');
