@@ -138,7 +138,15 @@ function damageFeedback(d){
   if(d.killed){$('elimination-name').textContent=d.name||'Opponent';$('elimination-banner').classList.add('show');eliminationUntil=performance.now()+1500;tone(660,.12,.045,'triangle');tone(880,.14,.04,'triangle',.09);tone(1320,.18,.035,'sine',.18)}
 }
 function markEliminated(id){hitReactions.set(id,{...(hitReactions.get(id)||{}),killed:true,time:performance.now()})}
-function beginSlide(){if(!isPlaying()||!state.onGround||state.climbing!==null||performance.now()<state.slideCooldown||Math.hypot(state.velocityX,state.velocityZ)<7)return;stopEmote();const speed=Math.hypot(state.velocityX,state.velocityZ),boost=Math.max(12,speed*1.08)/speed;state.velocityX*=boost;state.velocityZ*=boost;state.slideUntil=performance.now()+800;state.slideCooldown=performance.now()+1150;tone(130,.18,.025,'triangle',0,45)}
+const SLIDE_DURATION=950,SLIDE_DROP=.78;
+function beginSlide(){if(!isPlaying()||!state.onGround||state.climbing!==null||performance.now()<state.slideCooldown||Math.hypot(state.velocityX,state.velocityZ)<7)return;stopEmote();const speed=Math.hypot(state.velocityX,state.velocityZ),boost=Math.max(14,speed*1.10)/speed;state.velocityX*=boost;state.velocityZ*=boost;state.slideUntil=performance.now()+SLIDE_DURATION;state.slideCooldown=performance.now()+1250;tone(130,.18,.025,'triangle',0,45)}
+function slideVelocity(vx,vz,wx,wz,age,dt){
+  // Glide in the entry direction. Steering bends the path, never snaps/reverses it.
+  const speed=Math.hypot(vx,vz)*Math.exp(-(.28+1.35*age*age)*dt);
+  let angle=Math.atan2(vz,vx);
+  if(wx*wx+wz*wz>.01){const target=Math.atan2(wz,wx),delta=Math.atan2(Math.sin(target-angle),Math.cos(target-angle));angle+=clamp(delta,-.85*dt,.85*dt)}
+  return {x:Math.cos(angle)*speed,z:Math.sin(angle)*speed};
+}
 function movementSpeed(){return state.equipped==='bat'?1.08:WEAPONS[state.selectedWeapon].move||1}
 function updateTargetCard(now){
   if(!isPlaying()||state.emoteUntil){$('target-card').classList.remove('visible');return}if(now-targetCheckAt<80)return;targetCheckAt=now;
@@ -151,13 +159,13 @@ function updateFeel(dt,now){
   const reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   $('speed-lines').classList.toggle('active',isPlaying()&&!state.aiming&&!reduced&&Math.hypot(state.velocityX,state.velocityZ)>17);
   const sliding=isPlaying()&&state.slideUntil>now;
-  slideView=THREE.MathUtils.lerp(slideView,sliding?.54:0,1-Math.exp(-(sliding?14:10)*dt));landingKick*=Math.exp(-14*dt);shotShake*=Math.exp(-23*dt);
+  slideView=THREE.MathUtils.lerp(slideView,sliding?SLIDE_DROP:0,1-Math.exp(-(sliding?23:9)*dt));landingKick*=Math.exp(-14*dt);shotShake*=Math.exp(-23*dt);
   const gap=state.selectedWeapon==='shotgun'?1.55:state.selectedWeapon==='smg'?1.15:1;$('crosshair').style.transform=`translate(-50%,-50%) scale(${gap+weaponMotion.kick*.12+localHeat(now)*28})`;
 }
 function renderGameplay(now){
   const view=gameplayCamera();if(view!==camera||!isPlaying()){renderer.render(scene,view);return}
   const y=camera.position.y,pitch=camera.rotation.x,roll=camera.rotation.z,reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  camera.position.y-=slideView+(reduced?0:landingKick);if(!reduced&&state.aimBlend<.1){camera.rotation.x+=Math.sin(now*.09)*shotShake;camera.rotation.z+=Math.cos(now*.07)*shotShake*.35}
+  camera.position.y-=slideView+(reduced?0:landingKick);if(!reduced&&state.aimBlend<.1){camera.rotation.x+=Math.sin(now*.09)*shotShake;camera.rotation.z+=Math.cos(now*.07)*shotShake*.35+slideView/SLIDE_DROP*.035}
   renderer.render(scene,camera);camera.position.y=y;camera.rotation.x=pitch;camera.rotation.z=roll;camera.updateMatrixWorld(true);
 }
 state.buildHeld=false;state.lastBuildAttempt=-Infinity;state.buildMode=false;state.buildType='wall';state.buildRotation=0;state.builds=[];
@@ -388,17 +396,17 @@ function syncMeshes(dt=1/60){
     if(reaction?.killed)m.position.y=y-.6*deathT;
     if(u.wasGround===false&&p.grounded!==false)u.landAt=now;u.wasGround=p.grounded;
     const landAge=now-(u.landAt??-Infinity),landing=landAge<260?Math.sin(Math.min(1,landAge/260)*Math.PI):0,slide=u.slide;
-    m.scale.y=damp(m.scale.y,1-slide*.05-landing*.035,16);if(u.halo)u.halo.visible=p.alive!==false;
+    m.scale.y=damp(m.scale.y,1-landing*.025,16);if(u.halo)u.halo.visible=p.alive!==false;
     // Breathing, recoil and footfalls use damped values so low-rate network snapshots never pop.
     const step=Math.sin(u.stride),gait=u.walk*(1-u.air)*(1-slide),lift=Math.sin(now*.002+p.id.length)*.006+(1-Math.cos(u.stride*2))*.009*gait-landing*.055;
     const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*(WEAPON_FEEL[p.weapon]?.remoteKick??.085):0;
     if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
-    u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05-slide*.18,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:-slide*.12,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.10,14);u.gun.position.z=damp(u.gun.position.z,recoil,28);
+    u.gun.position.y=damp(u.gun.position.y,lift-reloadDip*.05-slide*.62,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:slide*.08,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.13,14);u.gun.position.z=damp(u.gun.position.z,recoil+slide*.10,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
-    if(avatar){avatar.position.y=damp(avatar.position.y,lift-slide*.22,20);
-      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,step*.008*gait,12);torso.position.y=damp(torso.position.y,.75-slide*.18,16);torso.position.z=damp(torso.position.z,-slide*.12,16);torso.rotation.x=damp(torso.rotation.x,-slide*.54-landing*.055,16);torso.rotation.y=damp(torso.rotation.y,step*.012*gait*(p.aiming?.25:1),12);torso.rotation.z=damp(torso.rotation.z,-step*.012*gait,12)}
-      avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air)*(1-slide),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12)+slide*(i?.82:-.66);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045)+slide*(i?-.11:.11),18)});
-      avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk*(1-slide);let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}targetX+=slide*(i?-.26:.42);targetZ+=slide*(i?-.10:.12);arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
+    if(avatar){avatar.position.y=damp(avatar.position.y,lift-slide*.64,20);
+      const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,step*.008*gait,12);torso.position.y=damp(torso.position.y,.75-slide*.04,16);torso.position.z=damp(torso.position.z,slide*.09,16);torso.rotation.x=damp(torso.rotation.x,slide*.30-landing*.055-.035*gait,16);torso.rotation.y=damp(torso.rotation.y,step*.012*gait*(p.aiming?.25:1),12);torso.rotation.z=damp(torso.rotation.z,-step*.012*gait+slide*.045,12)}
+      avatar.userData.legs.forEach((leg,i)=>{const phase=u.stride+i*Math.PI,walkX=Math.sin(phase)*.58*u.walk*(1-u.air)*(1-slide),airX=(-.30+(i?-.08:.04))*u.air,targetX=walkX+airX+landing*(i?-.12:.12)+slide*(i?1.28:1.40);leg.rotation.x=damp(leg.rotation.x,targetX,20);leg.rotation.z=damp(leg.rotation.z,u.air*(i?-.13:.13)+landing*(i?-.045:.045)+slide*(i?-.16:.12),18)});
+      avatar.userData.arms.forEach((arm,i)=>{const arc=swing?Math.sin(Math.min(1,elapsed/MELEE.duration)*Math.PI):0,walkArm=Math.sin(u.stride+i*Math.PI)*.045*u.walk*(1-slide);let targetX=walkArm,targetZ=0;if(swing){targetX=i===1?-1.05+arc*1.95:.38-arc*.16;targetZ=i===1?-.52*arc:.08*arc}else if(holding){targetX=i===1?-.50:.30}else if(p.reloading){targetX=i===1?-.34+reloadDip*.18:.62-reloadDip*.2;targetZ=i===1?-.10*reloadDip:.08*reloadDip}else if(p.aiming){targetX=i===1?-.035:.03}targetX-=slide*.24;targetZ+=slide*(i?-.025:.025);arm.rotation.x=THREE.MathUtils.lerp(arm.rotation.x,targetX,poseBlend);arm.rotation.z=THREE.MathUtils.lerp(arm.rotation.z,targetZ,poseBlend)});
     }
     poseEmote(m,p);
   });
@@ -767,9 +775,9 @@ function updateWeaponMotion(dt,now){
   rig.rotation.y=.20*free+inspect*1.2;rig.rotation.x=-inspect*.42;
   rig.position.y+=inspect*.06;rig.position.x+=inspect>0?Math.sin(inspectT*Math.PI*4)*.02*inspect:0;
   rig.visible=!(state.selectedWeapon==='sniper'&&aim>.78);
-  const slide=clamp(slideView/.54,0,1);
-  weaponModel.position.set((bob*.012*m.walk*(1-slide)-m.swayX)*free+jx,(-Math.abs(Math.cos(m.phase))*.010*m.walk*(1-slide)+breath)*free-.12*tilt-m.dip*.85-slide*.16+jy,feel.back*m.kick*(1-.4*aim)+.10*tilt);
-  weaponModel.rotation.set(profile.kick*feel.rise*m.kick+m.swayY*free-.24*tilt+m.dip*.55+slide*.075,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt-slide*.14+m.roll);
+  const slide=clamp(slideView/SLIDE_DROP,0,1);
+  weaponModel.position.set((bob*.012*m.walk*(1-slide)-m.swayX)*free+jx,(-Math.abs(Math.cos(m.phase))*.010*m.walk*(1-slide)+breath)*free-.12*tilt-m.dip*.85-slide*.16*free+jy,feel.back*m.kick*(1-.4*aim)+.10*tilt);
+  weaponModel.rotation.set(profile.kick*feel.rise*m.kick+m.swayY*free-.24*tilt+m.dip*.55+slide*.10*free,m.swayX*.3*free,-bob*.012*m.walk*free-.35*tilt-slide*.22*free+m.roll);
   rig.userData.support.position.set(-.10*mag,-.16*mag,.16*mag);
   rig.userData.gun.userData.magazine.position.y=1.36-.23*mag;
   const since=(now-state.lastShot)/1000,action=rig.userData.gun.userData.action;
@@ -794,7 +802,7 @@ function updateMovement(dt){
   state.landingGrace=Math.max(0,(state.landingGrace||0)-dt);
   const now=performance.now();
   if(state.slideUntil>now&&state.onGround&&!state.keys.Space){
-    const speed=previousSpeed*Math.exp(-.4*dt),steer=moving?1-Math.exp(-1.6*dt):0;state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,steer);const length=Math.hypot(state.velocityX,state.velocityZ);if(length>.01){state.velocityX*=speed/length;state.velocityZ*=speed/length}moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',(state.velocityZ+(state.map==='factory'?factoryConveyorAt(camera.position.x,camera.position.z,camera.position.y-1.7):0))*dt);updateVerticalMovement(dt);return;
+    const age=clamp(1-(state.slideUntil-now)/SLIDE_DURATION,0,1),velocity=slideVelocity(state.velocityX,state.velocityZ,wish.x,wish.z,age,dt);state.velocityX=velocity.x;state.velocityZ=velocity.z;moveSweptAxis('x',state.velocityX*dt);moveSweptAxis('z',(state.velocityZ+(state.map==='factory'?factoryConveyorAt(camera.position.x,camera.position.z,camera.position.y-1.7):0))*dt);updateVerticalMovement(dt);if(Math.hypot(state.velocityX,state.velocityZ)<3||!state.onGround)state.slideUntil=0;return;
   }
   if(state.slideUntil&&state.slideUntil<=now&&state.onGround){state.landingGrace=Math.max(state.landingGrace,.22);state.slideUntil=0}
   if(state.keys.Space||!state.onGround)state.slideUntil=0;
@@ -857,7 +865,8 @@ function updateMovement(dt){
   if(state.onGround&&!state.onRamp){
     const jumping=!!state.keys.Space,walk=8.5*movementSpeed(),speed=moving&&jumping?Math.max(11*movementSpeed(),previousSpeed)+(state.hopChain>0?2.6:0):walk;
     if(!jumping&&state.landingGrace>0&&previousSpeed>walk){const steer=1-Math.exp(-5*dt),drag=Math.exp(-1.1*dt);state.velocityX=THREE.MathUtils.lerp(state.velocityX*drag,moving?wish.x*walk:0,steer);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ*drag,moving?wish.z*walk:0,steer)}
-    else{state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed}
+    else if(jumping){state.velocityX=wish.x*speed;state.velocityZ=wish.z*speed}
+    else{const response=1-Math.exp(-(moving?24:18)*dt);state.velocityX=THREE.MathUtils.lerp(state.velocityX,wish.x*speed,response);state.velocityZ=THREE.MathUtils.lerp(state.velocityZ,wish.z*speed,response)}
     if(state.map==='factory')state.velocityZ+=factoryConveyorAt(camera.position.x,camera.position.z,camera.position.y-1.7);
     if(jumping){state.jumpQueued=false;state.velocityY=8;state.onGround=false;state.hopChain=moving?state.hopChain+1:0}else state.hopChain=0;
   }else if(moving){
