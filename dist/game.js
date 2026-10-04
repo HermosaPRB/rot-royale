@@ -1299,11 +1299,11 @@ function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return
 const AIRDROP={BROLL:4000,RELEASE:1400,CHUTE:1700,LAND:10000,ALT:27,PLANE_SPEED:38,OPEN_RANGE:2.2,OPEN_HOLD:1500,MIN_DELAY:45000,MAX_DELAY:75000,BANNER:4500};
 const SPECIALS={
   rpg:{name:'Raptor RPG',mag:1,reserve:Infinity,reload:2600,rate:500,spread:.004,range:80,color:0x56613a,move:.9,tier:0,speed:45,kind:'rocket'},
-  toilet:{name:'Skibidi Toilet Gun',mag:5,reserve:Infinity,reload:2300,rate:650,spread:.004,range:60,color:0xefebe3,move:.95,tier:0,speed:36,kind:'orb'}
+  toilet:{name:'Skibidi Toilet Gun',mag:5,reserve:Infinity,reload:2300,rate:650,spread:.004,range:60,color:0xefebe3,move:.95,tier:0,speed:40,kind:'orb'}
 };
 const SPECIAL_LABELS={rpg:'the RPG',toilet:'the Skibidi Toilet Gun'};
 const ROCKET={radius:4.5,max:120,min:25,self:.5,buildRadius:2.2};
-const VORTEX={radius:3.5,duration:1500,tick:250,tickDamage:5,popRadius:2.5,popDamage:50,direct:45,pull:20,charge:250};
+const VORTEX={radius:3.5,duration:1500,tick:250,tickDamage:5,popRadius:2.5,popDamage:50,direct:45,pull:20,charge:200};
 let airdropPlan=null,drop=null,brollCamera=null,projectileSerial=0,vortexSerial=0,puffGeometry=null;
 const specialOwners=new Map(),openHolds=new Map(),projectiles=[],vortices=[],blasts=[],smokePuffs=[];
 const _dropA=new THREE.Vector3(),_dropB=new THREE.Vector3();
