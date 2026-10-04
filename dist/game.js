@@ -79,6 +79,28 @@ const MELEE={damage:50,range:2.8,cooldown:800,duration:520,cone:.65};
 const SWITCH_DURATION=320,INSPECT_DURATION=1300;
 const meleeCooldowns=new Map(),meleeVisuals=new Map();
 const shotCooldowns=new Map(),hitModels=new Map(),hitReactions=new Map();
+const combatHistory=new Map(),predictedShots=new Set();let shotSerial=0;
+const NET_REWIND_MS=350;
+function recordCombatHistory(now,players=state.players){
+  for(const p of Object.values(players)){
+    let h=combatHistory.get(p.id);if(!h){h=[];combatHistory.set(p.id,h)}
+    const sample={time:now,x:p.x||0,y:p.y??1.7,z:p.z||0,yaw:p.yaw||0,sliding:!!p.sliding,deaths:p.deaths||0};
+    if(h.at(-1)?.time===now)h[h.length-1]=sample;else h.push(sample);
+    while(h.length>2&&h[1].time<now-600)h.shift();
+  }
+  for(const id of combatHistory.keys())if(!players[id])combatHistory.delete(id);
+}
+function rewindCombatPose(p,time,now){
+  if(!Number.isFinite(time)||time>now+5||time<now-NET_REWIND_MS)return p;
+  const h=combatHistory.get(p.id);if(!h?.length)return p;
+  const valid=s=>s.deaths===(p.deaths||0);
+  for(let i=1;i<h.length;i++)if(h[i].time>=time){
+    const a=h[i-1],b=h[i];if(!valid(a)||!valid(b)||time<a.time||Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)>12)return p;
+    const t=(time-a.time)/Math.max(1,b.time-a.time);
+    return {...p,sampleTime:time,x:THREE.MathUtils.lerp(a.x,b.x,t),y:THREE.MathUtils.lerp(a.y,b.y,t),z:THREE.MathUtils.lerp(a.z,b.z,t),yaw:a.yaw+Math.atan2(Math.sin(b.yaw-a.yaw),Math.cos(b.yaw-a.yaw))*t,sliding:t<.5?a.sliding:b.sliding};
+  }
+  return p;
+}
 const coffeeBursts=[],deathEffects=[];let coffeeGeometry,coffeeMaterial;
 const impactTransform=new THREE.Object3D();
 const tracerSlots=Array.from({length:96},()=>({start:new THREE.Vector3(),end:new THREE.Vector3(),born:-Infinity}));
@@ -415,14 +437,22 @@ function poseHeldGun(gun,shape){
 function strideAdvance(speed,dt){return Math.min(16,Math.max(0,speed)*2.6)*Math.max(0,dt)}
 function syncMeshes(dt=1/60){
   const now=performance.now(),blend=1-Math.exp(-13*dt),poseBlend=1-Math.exp(-18*dt);
+  const networked=!state.practice&&state.matchActive&&Number.isFinite(state.netSnapshotTime);
+  const serverNow=state.host?now:state.netSnapshotTime+Math.min(100,now-(state.netReceivedAt??now));
+  // Render from the same timestamped poses used for host hit checks. Extra
+  // position damping would otherwise move the visible body off its hitbox.
+  const viewTime=Math.min(state.netSnapshotTime,Math.max(state.netRenderTime??-Infinity,serverNow-65));
+  if(networked)state.netRenderTime=viewTime;
   const damp=(value,target,rate=18)=>THREE.MathUtils.lerp(value,target,1-Math.exp(-rate*dt));
   Object.values(state.players).forEach(p=>{
     if(p.id===state.id)return;if(p.alive!==false&&hitReactions.get(p.id)?.killed)hitReactions.delete(p.id);if(p.alive===false&&!hitReactions.get(p.id)?.killed)markEliminated(p.id);const m=playerMeshes.get(p.id)||createPlayerMesh(p),u=m.userData,reaction=hitReactions.get(p.id),deathAge=reaction?.killed?now-reaction.time:Infinity;m.visible=p.alive!==false||deathAge<DEATH_ANIMATION_MS;
     const tier=weaponTier(p.weapon,p.arsenal||{}),held=SPECIALS[p.special]?p.special:p.weapon;if((WEAPONS[held]||SPECIALS[held])&&(u.weaponType!==held||u.weaponTier!==tier)){m.remove(u.gun);u.gun=SPECIALS[held]?createSpecialGun(held,false):createHeldGun(tier?RARITIES[tier].color:WEAPONS[held].color,held,false,tier);poseHeldGun(u.gun,u.characterShape);u.gun.traverse(part=>{if(part.isMesh)part.userData.playerId=p.id});m.add(u.gun);u.weaponType=held;u.weaponTier=tier}
-    const x=p.x||0,z=p.z||0,dx=x-m.position.x,dz=z-m.position.z,teleport=!u.initialized||Math.hypot(dx,dz)>12;
-    const distance=teleport?0:Math.hypot(dx,dz)*blend,y=Math.max(0,(p.y??1.7)-1.7);
-    m.position.x=teleport?x:m.position.x+dx*blend;m.position.z=teleport?z:m.position.z+dz*blend;m.position.y=teleport?y:THREE.MathUtils.lerp(m.position.y,y,blend);
-    const yaw=p.yaw||0,turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport?turn:turn*blend;u.initialized=true;
+    const shown=networked?rewindCombatPose(p,viewTime,serverNow):p;
+    const x=shown.x||0,z=shown.z||0,dx=x-m.position.x,dz=z-m.position.z,teleport=!u.initialized||Math.hypot(dx,dz)>12;
+    const distance=teleport?0:Math.hypot(dx,dz)*(networked?1:blend),y=Math.max(0,(shown.y??1.7)-1.7);
+    m.position.x=teleport||networked?x:m.position.x+dx*blend;m.position.z=teleport||networked?z:m.position.z+dz*blend;m.position.y=teleport||networked?y:THREE.MathUtils.lerp(m.position.y,y,blend);
+    if(networked)u.netTime=shown.sampleTime??state.netSnapshotTime;
+    const yaw=shown.yaw||0,turn=Math.atan2(Math.sin(yaw-m.rotation.y),Math.cos(yaw-m.rotation.y));m.rotation.y+=teleport||networked?turn:turn*blend;u.initialized=true;
     const speed=distance/Math.max(.001,dt);u.speed=damp(u.speed||0,speed,10);u.walk=damp(u.walk||0,Math.min(1,u.speed/5),11);u.air=damp(u.air||0,p.grounded===false?1:0,13);u.slide=damp(u.slide||0,p.sliding&&p.grounded!==false?1:0,p.sliding?19:11);
     if(teleport){u.speed=0;u.walk=0;u.landAt=-Infinity;u.wasGround=p.grounded}
     u.stride=((u.stride||0)+strideAdvance(u.speed,dt)*(1-u.air)*(1-u.slide))%(Math.PI*2);
@@ -455,7 +485,7 @@ function myPublic(){return{voice:!!state.voiceOn,special:state.special?.type||nu
 function seedSelf(){state.players[state.id]=myPublic();}
 function broadcast(msg){if(!state.host)return;state.connections.forEach(c=>{if(c.open)c.send(msg)})}
 function sendHost(msg){if(state.host)handleHostMessage(msg,state.id);else if(state.conn?.open)state.conn.send(msg)}
-function hostSnapshot(){state.players[state.id]=myPublic();broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive,map:state.map,pickups:state.pickups,builds:state.builds,airdrop:publicDrop()})}
+function hostSnapshot(){state.players[state.id]=myPublic();const serverTime=performance.now();state.netSnapshotTime=serverTime;recordCombatHistory(serverTime);broadcast({t:'snapshot',serverTime,players:state.players,end:state.matchEnd,active:state.matchActive,map:state.map,pickups:state.pickups,builds:state.builds,airdrop:publicDrop()})}
 
 function createRoom(){
   state.host=true;state.practice=false;state.room=roomCode();state.id='host';resetPeer();setError('');
@@ -479,7 +509,7 @@ function handleHostMessage(d,from){
   if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
   if(d.t==='build')placeBuild(from,d);
   if(d.t==='state'&&state.players[from]){const p=state.players[from];p.steady=clamp(+d.steady||0,0,1);p.special=specialOwners.get(from)?.type||null;p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,64);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun';p.aiming=!!d.aiming;p.grounded=d.grounded!==false;p.reloading=!!d.reloading;p.sliding=!!d.sliding;if(openHolds.has(from)&&!playerNearDrop(p,.3))openHolds.delete(from)}
-  if(d.t==='shot'){openHolds.delete(from);resolveShot(from)}
+  if(d.t==='shot'){openHolds.delete(from);if(d.pose&&typeof d.pose==='object')handleHostMessage({...d.pose,t:'state'},from);resolveShot(from,performance.now(),d)}
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
   if(d.t==='melee'){openHolds.delete(from);resolveMelee(from)}
   if(d.t==='openStart')hostOpenStart(from);
@@ -491,6 +521,7 @@ function handleHostMessage(d,from){
 }
 function handleClientMessage(d){
   if(!d)return;
+  if(d.t==='snapshot'&&Number.isFinite(d.serverTime)){state.netSnapshotTime=d.serverTime;state.netReceivedAt=performance.now();recordCombatHistory(d.serverTime,d.players||{})}
   if(d.t==='emote'){if(state.players[d.id])state.players[d.id].emoteUntil=d.until;if(d.id===state.id&&state.emoteUntil)state.emoteUntil=d.until}
   if(d.t==='builds')syncBuilds(d.builds||[]);
   if(d.t==='buildError')toast(d.message);
@@ -545,6 +576,7 @@ function startMatch(){
   resetPickups();scheduleAirdrop();broadcast({t:'start',end:state.matchEnd,players:state.players,map:state.map,pickups:state.pickups});beginMatch(true)
 }
 function beginMatch(asHost){
+  combatHistory.clear();predictedShots.clear();state.netSnapshotTime=state.netRenderTime=undefined;
   stopEmote(false);resetAirdropState();
   syncBuilds([]);state.buildMode=false;buildCooldowns.clear();
   state.climbing=null;
@@ -632,7 +664,11 @@ function shoot(){
   if(state.buildMode||state.map==='surf'||airdropFrozen())return;
   if(state.special){const now=performance.now();if(isPlaying()&&state.equipped!=='bat'&&now-state.switchStart>=SWITCH_DURATION&&now-state.meleeStart>=MELEE.duration)fireSpecial(now);return}
   if(!isPlaying()||state.equipped==='bat'||state.reloading||performance.now()-state.meleeStart<MELEE.duration||performance.now()-state.switchStart<SWITCH_DURATION||performance.now()-state.inspectStart<INSPECT_DURATION)return;const w=weaponStats(state.selectedWeapon),now=performance.now();if(now-state.lastShot<w.rate)return;if(state.ammo<=0){reload();return}state.lastShot=now;state.ammo--;updateHud();weaponMotion.kick=Math.min(1.4,weaponMotion.kick+({ar:.65,shotgun:1.3,sniper:1.1,smg:.45}[state.selectedWeapon]));
-  weaponSound(state.selectedWeapon,w.tier);shotShake=Math.min(.008,shotShake+({ar:.002,smg:.0015,shotgun:.008,sniper:.006}[state.selectedWeapon]));publishCombatPose();sendHost({t:'shot'});
+  weaponSound(state.selectedWeapon,w.tier);shotShake=Math.min(.008,shotShake+({ar:.002,smg:.0015,shotgun:.008,sniper:.006}[state.selectedWeapon]));
+  const shot={t:'shot',seq:++shotSerial,pose:myPublic(),viewTimes:{}};
+  if(!state.practice)for(const [id,m] of playerMeshes)if(Number.isFinite(m.userData.netTime))shot.viewTimes[id]=m.userData.netTime;
+  if(state.host)state.players[state.id]=shot.pose;else predictShotTracer(shot,w);
+  sendHost(shot);
   applyShotFeel(state.selectedWeapon,now);
 }
 // Recoil lands after the pose is published, so this shot goes where you aimed and the next one climbs.
@@ -647,15 +683,17 @@ function applyShotFeel(type,now){
 function updateAutomaticFire(){if(state.fireHeld&&!state.special&&WEAPONS[state.selectedWeapon].automatic)shoot()}
 function publishCombatPose(){const p=myPublic();if(state.host)state.players[state.id]=p;else sendHost({t:'state',x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,equipped:p.equipped,aiming:p.aiming,grounded:p.grounded,reloading:p.reloading,sliding:p.sliding,steady:p.steady})}
 // The host raycasts the actual character geometry, including its own player, and decides damage.
-function resolveShot(id,now=performance.now()){
+function resolveShot(id,now=performance.now(),shot={}){
   if(airdropFrozen(now))return;
   const attacker=state.players[id],w=Object.hasOwn(WEAPONS,attacker?.weapon)?weaponStats(attacker.weapon,attacker.arsenal||{}):null;
-  if(!state.host||!state.matchActive||!attacker||attacker.alive===false||attacker.equipped==='bat'||!w||now-(shotCooldowns.get(id)??-Infinity)<w.rate)return;
-  shotCooldowns.set(id,now);const targets=[...shotBlockers],hits=new Map(),structureHits=new Map();world.updateMatrixWorld(true);
+  const last=shotCooldowns.get(id)??-Infinity,tolerance=id!==state.id&&!attacker?.bot?Math.min(45,(w?.rate||0)*.4):0;
+  if(!state.host||!state.matchActive||!attacker||attacker.alive===false||attacker.equipped==='bat'||!w||now-last<w.rate-tolerance)return;
+  shotCooldowns.set(id,Math.max(now,last+w.rate));recordCombatHistory(now);const targets=[...shotBlockers],hits=new Map(),structureHits=new Map();world.updateMatrixWorld(true);
   for(const p of Object.values(state.players)){
     if(p.id===id||p.alive===false)continue;
     let model=hitModels.get(p.id);if(!model){model=createPlayerMesh(p,false,true);model.userData.hitMeshes=[];model.traverse(m=>{if(m.isMesh&&!m.userData.noHit)model.userData.hitMeshes.push(m)});hitModels.set(p.id,model)}
-    model.position.set(p.x||0,(p.y??1.7)-1.7,p.z||0);model.rotation.set(0,p.yaw||0,0);model.scale.y=p.sliding?.78:1;poseEmote(model,p);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
+    const pose=rewindCombatPose(p,shot.viewTimes?.[p.id],now);
+    model.position.set(pose.x||0,(pose.y??1.7)-1.7,pose.z||0);model.rotation.set(0,pose.yaw||0,0);model.scale.y=pose.sliding?.78:1;poseEmote(model,pose);model.updateMatrixWorld(true);targets.push(...model.userData.hitMeshes);
   }
   const origin=new THREE.Vector3(attacker.x,(attacker.y??1.7)-(attacker.sliding ? .42 : 0),attacker.z),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(attacker.pitch||0,attacker.yaw||0,0,'YXZ')),ends=[],impacts=[];
   const feel=WEAPON_FEEL[attacker.weapon],heat=decayedHeat(id,now,feel);shotHeat.set(id,{v:Math.min(feel.bloomMax,heat+feel.bloom),t:now});
@@ -670,7 +708,7 @@ function resolveShot(id,now=performance.now()){
     if(targetId){recordHit(first);if(attacker.weapon==='sniper'&&w.tier){const next=intersections.find(hit=>hit.object.userData.playerId!==targetId);if(next){endpoint=next.point;if(next.object.userData.playerId)recordHit(next,.65)}}}else if(first&&impacts.length<4)impacts.push({x:first.point.x,y:first.point.y,z:first.point.z});
     ends.push(endpoint.toArray());
   }
-  const trail={t:'tracers',id,tier:w.tier,weapon:attacker.weapon,origin:origin.clone().add(new THREE.Vector3(.24,-.18,-.65).applyQuaternion(rotation)).toArray(),ends,impacts};showTracers(trail);broadcast(trail);
+  const trail={t:'tracers',id,seq:shot.seq,tier:w.tier,weapon:attacker.weapon,origin:origin.clone().add(new THREE.Vector3(.24,-.18,-.65).applyQuaternion(rotation)).toArray(),ends,impacts};showTracers(trail);broadcast(trail);
   let anyHeadshot=false;
   for(const [target,hit] of hits){
     anyHeadshot||=hit.headshot;const impact={t:'impact',id:target,headshot:hit.headshot,x:hit.point.x,y:hit.point.y,z:hit.point.z};showImpact(impact);broadcast(impact);applyHit(id,target,hit.damage,hit.headshot);
@@ -678,7 +716,21 @@ function resolveShot(id,now=performance.now()){
   for(const [buildId,damage] of structureHits)damageBuild(buildId,damage);
   if(hits.size||structureHits.size){if(id===state.id)showShotFeedback(anyHeadshot);else state.connections.get(id)?.send({t:'shotResult',id,headshot:anyHeadshot})}
 }
+function predictShotTracer(shot,w){
+  const origin=camera.position.clone(),rotation=camera.quaternion.clone(),ends=[];
+  if(shot.pose?.sliding)origin.y-=.42;
+  const targets=[...shotBlockers];for(const m of playerMeshes.values())if(m.visible)m.traverse(part=>{if(part.isMesh&&!part.userData.noHit)targets.push(part)});
+  world.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+  for(let n=0;n<w.pellets;n++){
+    const angle=n*2.399963,radius=w.pellets>1?Math.sqrt((n+.5)/w.pellets)*w.spread*.5:0;
+    const dir=new THREE.Vector3(Math.cos(angle)*radius,Math.sin(angle)*radius,-1).normalize().applyQuaternion(rotation);
+    raycaster.set(origin,dir);raycaster.far=w.range;const hit=raycaster.intersectObjects(targets,false)[0];ends.push((hit?hit.point:origin.clone().addScaledVector(dir,w.range)).toArray());
+  }
+  predictedShots.add(shot.seq);while(predictedShots.size>128)predictedShots.delete(predictedShots.values().next().value);
+  showTracers({id:state.id,weapon:state.selectedWeapon,tier:w.tier,origin:origin.toArray(),ends});
+}
 function showTracers(message){
+  if(message.id===state.id&&predictedShots.delete(message.seq)){for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});return}
   const valid=p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite);
   if(!valid(message.origin)||!Array.isArray(message.ends))return;
   if(!tracerMesh){tracerMesh=new THREE.InstancedMesh(new THREE.CylinderGeometry(1,1,1,5),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false}),tracerSlots.length);tracerMesh.frustumCulled=false;tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);world.add(tracerMesh)}
@@ -794,7 +846,7 @@ function updateAimAssist(dt){
   const cone=THREE.MathUtils.degToRad({sniper:4.5,ar:6.5,smg:7.5,shotgun:8}[state.selectedWeapon]||6),minimum=Math.cos(cone),origin=camera.position,best={score:-Infinity,dot:0,target:null};
   for(const p of Object.values(state.players)){
     if(p.id===state.id||p.alive===false)continue;
-    const point=new THREE.Vector3(p.x,(p.y??1.7)-.30,p.z),offset=point.clone().sub(origin),distance=offset.length();if(distance<.1||distance>weaponStats(state.selectedWeapon).range)continue;
+    const visible=playerMeshes.get(p.id),point=visible?.visible?visible.position.clone().add(new THREE.Vector3(0,p.sliding?.85:1.4,0)):new THREE.Vector3(p.x,(p.y??1.7)-.30,p.z),offset=point.clone().sub(origin),distance=offset.length();if(distance<.1||distance>weaponStats(state.selectedWeapon).range)continue;
     const dot=offset.normalize().dot(forward),score=dot-distance*.000002;
     if(dot>minimum&&score>best.score&&hasClearShot(origin,point)){best.score=score;best.dot=dot;best.target=point}
   }
@@ -1254,7 +1306,7 @@ function updateBots(dt){
     }
   }
 }
-function updateNetwork(now){if(now-state.lastNet<65)return;state.lastNet=now;if(state.host)hostSnapshot();else publishCombatPose()}
+function updateNetwork(now){if(now-state.lastNet<33)return;state.lastNet=now;if(state.host)hostSnapshot();else publishCombatPose()}
 function updateTimer(){
   if(!state.matchActive)return;
   if(state.map==='surf'){
