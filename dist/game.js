@@ -16,14 +16,14 @@ const DEFAULT_BINDS={
   forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',aim:'ShiftLeft',
   melee:'KeyF',reload:'KeyR',emote:'KeyE',build:'KeyB',buildType:'KeyT',inspect:'KeyI',
   slide:'ControlLeft',sound:'KeyM',capture:'KeyL',turnLeft:'ArrowLeft',turnRight:'ArrowRight',
-  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4'
+  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4',voice:'KeyV'
 };
 const BIND_LABELS={
   forward:'Move forward',back:'Move backward',left:'Move left',right:'Move right',jump:'Jump / bunny hop',
   aim:'Aim',melee:'Gun / bat',reload:'Reload / rotate build',emote:'Emote / interact',build:'Build mode',
   buildType:'Change build piece',inspect:'Inspect weapon',slide:'Slide',sound:'Toggle sound',
   capture:'Capture mouse',turnLeft:'Keyboard turn left',turnRight:'Keyboard turn right',
-  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4'
+  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4',voice:'Voice chat on / off'
 };
 function loadKeybinds(){try{const saved=JSON.parse(localStorage.getItem('rot-royale-keybinds')||'{}');return Object.fromEntries(Object.entries(DEFAULT_BINDS).map(([action,code])=>[action,typeof saved[action]==='string'?saved[action]:code]))}catch{return{...DEFAULT_BINDS}}}
 let keybinds=loadKeybinds(),rebindingAction=null;
@@ -47,6 +47,7 @@ function renderKeybinds(){
 function updateBindLabels(){
   document.querySelectorAll?.('[data-bind-action]').forEach(node=>node.textContent=keyName(keybinds[node.dataset.bindAction]));
   if($('control-hint'))$('control-hint').textContent=`${keyName(keybinds.forward)}/${keyName(keybinds.left)}/${keyName(keybinds.back)}/${keyName(keybinds.right)} TO MOVE · CLICK TO CAPTURE MOUSE`;
+  updateVoiceUi();
 }
 function setKeybind(action,code){
   const old=keybinds[action],conflict=Object.keys(keybinds).find(other=>other!==action&&keybinds[other]===code);
@@ -65,7 +66,7 @@ const WEAPONS = {
 };
 
 const state = {
-  mode:'home',host:false,practice:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
+  mode:'home',host:false,practice:false,voiceOn:false,peer:null,conn:null,connections:new Map(),room:'',id:'',
   players:{},selectedChar:'wooden',selectedWeapon:'ar',keys:{},health:100,kills:0,deaths:0,alive:true,map:'neon',arsenal:{},pickups:[],lootNoticeUntil:0,
   ammo:30,reserve:Infinity,reloading:false,lastShot:0,matchEnd:0,matchActive:false,lastNet:0,velocityY:0,onGround:true,
   pointerLockFailed:false,capturePending:false,mouseX:null,mouseY:null,mouseOver:false,velocityX:0,velocityZ:0,hopChain:0,pendingWeapon:'ar',climbing:null,emoteUntil:0,emoteYaw:0,emoteEquipment:'gun',
@@ -450,7 +451,7 @@ function syncMeshes(dt=1/60){
   for(const [id,m] of playerMeshes)if(!state.players[id]){world.remove(m);playerMeshes.delete(id)}
 }
 
-function myPublic(){return{special:state.special?.type||null,steady:state.selectedWeapon==='sniper'?steadiness(performance.now()):0,id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,nextWeapon:state.pendingWeapon,arsenal:{...state.arsenal},equipped:state.equipped,aiming:state.aimBlend>.55,grounded:state.onGround,reloading:state.reloading,sliding:state.slideUntil>performance.now(),emoteUntil:state.emoteUntil,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:state.emoteUntil>Date.now()?state.emoteYaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive,respawnAt:state.respawnAt}}
+function myPublic(){return{voice:!!state.voiceOn,special:state.special?.type||null,steady:state.selectedWeapon==='sniper'?steadiness(performance.now()):0,id:state.id,name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,nextWeapon:state.pendingWeapon,arsenal:{...state.arsenal},equipped:state.equipped,aiming:state.aimBlend>.55,grounded:state.onGround,reloading:state.reloading,sliding:state.slideUntil>performance.now(),emoteUntil:state.emoteUntil,x:camera.position.x,y:camera.position.y,z:camera.position.z,yaw:state.emoteUntil>Date.now()?state.emoteYaw:camera.rotation.y,pitch:camera.rotation.x,health:state.health,kills:state.kills,deaths:state.deaths,alive:state.alive,respawnAt:state.respawnAt}}
 function seedSelf(){state.players[state.id]=myPublic();}
 function broadcast(msg){if(!state.host)return;state.connections.forEach(c=>{if(c.open)c.send(msg)})}
 function sendHost(msg){if(state.host)handleHostMessage(msg,state.id);else if(state.conn?.open)state.conn.send(msg)}
@@ -458,13 +459,13 @@ function hostSnapshot(){state.players[state.id]=myPublic();broadcast({t:'snapsho
 
 function createRoom(){
   state.host=true;state.practice=false;state.room=roomCode();state.id='host';resetPeer();setError('');
-  const peerId=`rot-royale-${state.room.toLowerCase()}`;state.peer=new Peer(peerId);
+  const peerId=`rot-royale-${state.room.toLowerCase()}`;state.peer=new Peer(peerId);wireVoicePeer(state.peer);
   state.peer.on('open',()=>{state.id=peerId;state.players={};seedSelf();enterLobby();state.peer.on('connection',acceptConnection)});
   state.peer.on('error',peerError);
 }
 function joinRoom(){
   const code=$('room-code-input').value.trim().toUpperCase();if(code.length!==6){setError('Enter the 6-character room code.');return}
-  state.host=false;state.practice=false;state.room=code;resetPeer();setError('Connecting to the plaza…');state.peer=new Peer();
+  state.host=false;state.practice=false;state.room=code;resetPeer();setError('Connecting to the plaza…');state.peer=new Peer();wireVoicePeer(state.peer);
   state.peer.on('open',id=>{state.id=id;const c=state.peer.connect(`rot-royale-${code.toLowerCase()}`,{reliable:true,metadata:{name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon}});state.conn=c;wireClient(c);setTimeout(()=>{if(state.mode==='home'&&$('connection-error').textContent.includes('Connecting'))leaveToHome('Could not reach that room. Check that the host is still in the lobby.')},9000)});state.peer.on('error',peerError);
 }
 function acceptConnection(c){
@@ -485,6 +486,7 @@ function handleHostMessage(d,from){
   if(d.t==='openDrop')hostOpenDrop(from);
   if(d.t==='specialFire'){openHolds.delete(from);hostSpecialFire(from)}
   if(d.t==='ready')updateLobby();
+  if(d.t==='voice'&&state.players[from]){state.players[from].voice=!!d.on;hostSnapshot();if(state.mode==='lobby')updateLobby()}
 }
 function handleClientMessage(d){
   if(!d)return;
@@ -492,7 +494,7 @@ function handleClientMessage(d){
   if(d.t==='builds')syncBuilds(d.builds||[]);
   if(d.t==='buildError')toast(d.message);
   if(d.t==='welcome'){state.players=d.players;if(d.map)setMap(d.map);enterLobby()}
-  if(d.t==='snapshot'){state.players=d.players||{};state.matchEnd=d.end||0;if(d.map)setMap(d.map);if(d.pickups)state.pickups=d.pickups;if(d.active&&!state.matchActive)beginMatch(false);if(d.builds)syncBuilds(d.builds);if('airdrop' in d&&state.matchActive)applyDropState(d.airdrop);syncLocalFromSnapshot()}
+  if(d.t==='snapshot'){state.players=d.players||{};state.matchEnd=d.end||0;if(d.map)setMap(d.map);if(d.pickups)state.pickups=d.pickups;if(d.active&&!state.matchActive)beginMatch(false);if(d.builds)syncBuilds(d.builds);if('airdrop' in d&&state.matchActive)applyDropState(d.airdrop);syncLocalFromSnapshot();if(state.mode==='lobby')updateLobby()}
   if(d.t==='start'){state.matchEnd=d.end;state.players=d.players;if(d.map)setMap(d.map);state.pickups=d.pickups||[];beginMatch(false)}
   if(d.t==='pickups')state.pickups=d.pickups||[];
   if(d.t==='loot')applyLootAward(d);
@@ -526,12 +528,12 @@ function syncLocalFromSnapshot(){
   updateHud();
 }
 function peerError(err){const msg=err.type==='peer-unavailable'?'Room not found. Check the code and try again.':'Connection trouble. Try creating or joining the room again.';leaveToHome(msg)}
-function resetPeer(){if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
+function resetPeer(){stopVoice(false);if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
 function setError(s){$('connection-error').textContent=s}
 
 function enterLobby(){state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby()}
 function updateLobby(){
-  const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
+  const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}${p.voice?' 🔊':''}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
   $('start-match').style.display=state.host?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
 }
 function startMatch(){
@@ -1594,7 +1596,121 @@ function resetAirdropState(){
   specialOwners.clear();openHolds.clear();state.special=null;state.specialCharge=0;state.openHold=0;
 }
 
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}if(state.map==='factory')updateFactoryEffects();updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateAirdrop(dt,now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
+// ---------- Optional proximity voice chat ----------
+// Opt-in mesh: only players who switch Voice on call each other, and the lower peer id always dials so a pair never double-calls.
+// Each voice is spatialized at the speaker; in the lobby everyone in voice hears each other at full volume.
+const VOICE={maxDistance:25,refDistance:2.5,retryMs:20000,connectTimeout:9000,occlusionMs:200,tagRange:40,talkLevel:.035};
+const voicePeers=new Map(),voiceFailedAt=new Map(),voiceWarned=new Set(),voiceTags=new Map();
+let voiceStream=null,voiceBus=null,voiceLocalAnalyser=null,voiceMeshAt=0,voiceOcclusionAt=0,voiceStarting=false;
+const VOICE_BUTTONS=['voice-hud','voice-lobby','voice-pause'],voiceSample=new Uint8Array(512),_voicePos=new THREE.Vector3(),_voiceDir=new THREE.Vector3();
+
+function voiceAvailable(){return !!state.peer&&!state.practice&&!!navigator.mediaDevices?.getUserMedia}
+async function toggleVoice(){
+  if(state.voiceOn){stopVoice();toast('Voice off');return}
+  if(voiceStarting)return;
+  if(!voiceAvailable()){toast(state.practice||!state.peer?'Voice chat needs an online room':"Voice chat isn't available in this browser");return}
+  voiceStarting=true;unlockAudio();updateVoiceUi();
+  try{voiceStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false})}
+  catch{voiceStarting=false;voiceStream=null;toast('Microphone blocked · allow mic access to use voice');updateVoiceUi();return}
+  voiceStarting=false;
+  if(!state.peer){voiceStream.getTracks().forEach(t=>t.stop());voiceStream=null;updateVoiceUi();return}
+  state.voiceOn=true;voiceFailedAt.clear();voiceWarned.clear();
+  if(audioContext){voiceLocalAnalyser=audioContext.createAnalyser();voiceLocalAnalyser.fftSize=512;audioContext.createMediaStreamSource(voiceStream).connect(voiceLocalAnalyser)}
+  announceVoice();updateVoiceMesh(true);updateVoiceUi();toast(`Voice on · headphones recommended · ${keyName(keybinds.voice)} to leave`);
+}
+function stopVoice(notify=true){
+  for(const id of [...voicePeers.keys()])dropVoicePeer(id);
+  voiceStream?.getTracks().forEach(t=>t.stop());voiceStream=null;voiceLocalAnalyser=null;
+  const was=state.voiceOn;state.voiceOn=false;if(notify&&was&&state.peer)announceVoice();updateVoiceUi();
+}
+function announceVoice(){if(state.host){const me=state.players[state.id];if(me)me.voice=!!state.voiceOn;hostSnapshot();if(state.mode==='lobby')updateLobby()}else sendHost({t:'voice',on:!!state.voiceOn})}
+function wireVoicePeer(peer){
+  peer.on('call',call=>{
+    if(!state.voiceOn||!voiceStream||!state.players[call.peer]?.voice){call.close();return}
+    dropVoicePeer(call.peer);call.answer(voiceStream);trackVoiceCall(call);
+  });
+}
+function trackVoiceCall(call){
+  if(!call)return;const entry={call,id:call.peer,startedAt:performance.now(),connected:false,level:0};voicePeers.set(call.peer,entry);
+  call.on('stream',stream=>attachVoiceStream(entry,stream));
+  call.on('close',()=>{if(voicePeers.get(call.peer)===entry)dropVoicePeer(call.peer)});
+  call.on('error',()=>{if(voicePeers.get(call.peer)===entry){dropVoicePeer(call.peer);markVoiceFailed(call.peer)}});
+}
+function attachVoiceStream(entry,stream){
+  if(entry.connected||voicePeers.get(entry.id)!==entry)return;entry.connected=true;voiceFailedAt.delete(entry.id);
+  // Chrome only feeds remote WebRTC audio into Web Audio while a media element is playing that stream.
+  const el=new Audio();el.srcObject=stream;el.muted=true;el.play?.().catch(()=>{});entry.el=el;
+  unlockAudio();if(!audioContext){el.muted=false;return}
+  voiceBus??=(()=>{const g=audioContext.createGain();g.gain.value=1.15;g.connect(audioContext.destination);return g})();
+  const source=audioContext.createMediaStreamSource(stream),filter=audioContext.createBiquadFilter(),panner=audioContext.createPanner(),analyser=audioContext.createAnalyser();
+  filter.type='lowpass';filter.frequency.value=20000;analyser.fftSize=512;
+  Object.assign(panner,{panningModel:'HRTF',distanceModel:'linear',refDistance:VOICE.refDistance,maxDistance:VOICE.maxDistance,rolloffFactor:1});
+  source.connect(analyser);source.connect(filter);filter.connect(panner);panner.connect(voiceBus);
+  Object.assign(entry,{source,filter,panner,analyser});
+}
+function dropVoicePeer(id){
+  const e=voicePeers.get(id);if(!e)return;voicePeers.delete(id);
+  try{e.call.close()}catch{}for(const node of [e.source,e.filter,e.panner,e.analyser])try{node?.disconnect()}catch{}
+  if(e.el){e.el.pause?.();e.el.srcObject=null}
+}
+function markVoiceFailed(id){
+  voiceFailedAt.set(id,performance.now());if(voiceWarned.has(id))return;voiceWarned.add(id);
+  toast(`Voice couldn't connect to ${state.players[id]?.name||'a player'} · their network may block it`);
+}
+function updateVoiceMesh(force=false){
+  const now=performance.now();if(!force&&now-voiceMeshAt<1000)return;voiceMeshAt=now;
+  if(!state.voiceOn||!voiceStream||!state.peer||state.peer.destroyed)return;
+  for(const [id,e] of voicePeers){const p=state.players[id];if(!p||!p.voice){dropVoicePeer(id);continue}if(!e.connected&&now-e.startedAt>VOICE.connectTimeout){dropVoicePeer(id);markVoiceFailed(id)}}
+  for(const p of Object.values(state.players)){
+    if(p.id===state.id||p.bot||!p.voice||voicePeers.has(p.id)||String(state.id)>=String(p.id))continue;
+    if(now-(voiceFailedAt.get(p.id)??-Infinity)<VOICE.retryMs)continue;
+    trackVoiceCall(state.peer.call(p.id,voiceStream));
+  }
+}
+function voiceLevel(analyser){
+  if(!analyser)return 0;analyser.getByteTimeDomainData(voiceSample);let sum=0;
+  for(let i=0;i<analyser.fftSize;i++){const v=(voiceSample[i]-128)/128;sum+=v*v}return Math.sqrt(sum/analyser.fftSize);
+}
+function setAudioPosition(node,v,t){if(node.positionX){node.positionX.setTargetAtTime(v.x,t,.04);node.positionY.setTargetAtTime(v.y,t,.04);node.positionZ.setTargetAtTime(v.z,t,.04)}else node.setPosition(v.x,v.y,v.z)}
+function updateVoice(now){
+  updateVoiceMesh();
+  if(audioContext&&state.voiceOn&&voicePeers.size){
+    const L=audioContext.listener,t=audioContext.currentTime,ear=camera.position;camera.getWorldDirection(_voiceDir);
+    setAudioPosition(L,ear,t);
+    if(L.forwardX){L.forwardX.setTargetAtTime(_voiceDir.x,t,.04);L.forwardY.setTargetAtTime(_voiceDir.y,t,.04);L.forwardZ.setTargetAtTime(_voiceDir.z,t,.04);L.upX.value=0;L.upY.value=1;L.upZ.value=0}else L.setOrientation(_voiceDir.x,_voiceDir.y,_voiceDir.z,0,1,0);
+    const occlusion=state.matchActive&&now-voiceOcclusionAt>VOICE.occlusionMs;if(occlusion)voiceOcclusionAt=now;
+    for(const [id,e] of voicePeers){
+      if(!e.panner)continue;const p=state.players[id],mesh=playerMeshes.get(id);
+      if(state.matchActive&&p){if(mesh)_voicePos.set(mesh.position.x,mesh.position.y+1.55,mesh.position.z);else _voicePos.set(p.x||0,p.y??1.7,p.z||0)}else _voicePos.copy(ear);
+      setAudioPosition(e.panner,_voicePos,t);
+      if(occlusion){const blocked=_voicePos.distanceTo(ear)>1&&!hasClearShot(ear,_voicePos.clone());e.filter.frequency.setTargetAtTime(blocked?850:20000,t,.08)}
+      else if(!state.matchActive)e.filter.frequency.setTargetAtTime(20000,t,.08);
+      e.level=e.level*.7+voiceLevel(e.analyser)*.3;
+    }
+  }
+  const talking=state.voiceOn&&voiceLevel(voiceLocalAnalyser)>VOICE.talkLevel;for(const id of VOICE_BUTTONS)$(id).classList.toggle('talking',talking);
+  updateVoiceTags();
+}
+// Speaker pills over players who are in voice; they light up while that player is talking.
+function updateVoiceTags(){
+  const root=$('voice-tags'),seen=new Set();
+  if(state.matchActive&&isPlaying()&&!airdropCinematicActive())for(const p of Object.values(state.players)){
+    if(p.id===state.id||!p.voice||p.alive===false)continue;const mesh=playerMeshes.get(p.id);if(!mesh?.visible)continue;
+    _voicePos.set(mesh.position.x,mesh.position.y+2.45,mesh.position.z);const distance=_voicePos.distanceTo(camera.position);if(distance>VOICE.tagRange)continue;
+    const s=_voicePos.clone().project(camera);if(s.z>1||Math.abs(s.x)>1.05||Math.abs(s.y)>1.05)continue;
+    let tag=voiceTags.get(p.id);if(!tag){tag=document.createElement('div');tag.className='voice-tag';root.appendChild(tag);voiceTags.set(p.id,tag)}
+    const entry=voicePeers.get(p.id),label=`${entry?.connected?'🔊':'🔇'} ${p.name||'Player'}`;if(tag.textContent!==label)tag.textContent=label;
+    tag.classList.toggle('talking',!!entry&&entry.level>VOICE.talkLevel&&distance<VOICE.maxDistance);tag.classList.toggle('far',distance>=VOICE.maxDistance);
+    tag.style.transform=`translate(${((s.x*.5+.5)*innerWidth).toFixed(1)}px,${((-s.y*.5+.5)*innerHeight).toFixed(1)}px) translate(-50%,-100%)`;seen.add(p.id);
+  }
+  for(const [id,tag] of voiceTags)if(!seen.has(id)){tag.remove();voiceTags.delete(id)}
+}
+function updateVoiceUi(){
+  const on=!!state.voiceOn,key=keyName(keybinds.voice);
+  for(const id of VOICE_BUTTONS){const b=$(id);b.classList.toggle('on',on);b.setAttribute?.('aria-pressed',String(on));b.textContent=voiceStarting?'🎙 CONNECTING…':on?`🎙 VOICE ON · ${key}`:`🎙 VOICE OFF · ${key}`}
+}
+
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}if(state.map==='factory')updateFactoryEffects();updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateAirdrop(dt,now);updateVoice(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -1646,11 +1762,17 @@ function remapKeyboardEvent(e){
   if(mapped!==e.code)try{Object.defineProperty(e,'code',{value:mapped})}catch{}
 }
 addEventListener('keydown',remapKeyboardEvent,true);addEventListener('keyup',remapKeyboardEvent,true);
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{
+  if(e.code!=='KeyV'||!['lobby','game','pause'].includes(state.mode))return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(!e.repeat)toggleVoice();
+},true);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','KeyV','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(e.code==='KeyV'&&!e.repeat){toggleVoice();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
 addEventListener('keydown',e=>{if(isPlaying()&&state.map==='surf'&&e.code==='KeyR'&&!e.repeat){e.preventDefault();resetSurfRun(true)}});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(!controls.isLocked)requestMouseCapture();if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('capture-mouse').onclick=requestMouseCapture;
+for(const id of VOICE_BUTTONS)$(id).onclick=toggleVoice;updateVoiceUi();
 $('settings-open').onclick=openSettings;$('settings-close').onclick=closeSettings;
 $('settings-reset').onclick=()=>{keybinds={...DEFAULT_BINDS};rebindingAction=null;saveKeybinds();renderKeybinds();toast('Default controls restored')};
 $('keybind-list').onclick=e=>{const button=e.target.closest?.('[data-bind]');if(!button)return;rebindingAction=button.dataset.bind;renderKeybinds()};

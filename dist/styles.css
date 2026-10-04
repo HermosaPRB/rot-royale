@@ -150,3 +150,13 @@ input{border:2px solid var(--ink);border-radius:0;background:white;padding:10px 
 .airdrop-hold small{padding:3px 8px;background:#1b1206cc;color:#fff;font:700 11px "DM Sans",sans-serif;letter-spacing:.08em}
 .crosshair.ch-rpg{--len:9px}.crosshair.ch-rpg .dot{display:block;background:#ffb35a}
 .crosshair.ch-toilet{--len:5px;--off:3px}.crosshair.ch-toilet .ring,.crosshair.ch-toilet .dot{display:block}.crosshair.ch-toilet .ring{border-color:#7fd8ff}.crosshair.ch-toilet .dot{background:#7fd8ff}
+
+/* Proximity voice chat */
+.voice-hud{position:absolute;left:20px;bottom:116px;pointer-events:auto;padding:6px 11px;border:1px solid #ffffff55;border-radius:3px;background:#0e2536cc;color:#cfe3ee;font:700 11px "DM Sans",sans-serif;letter-spacing:.08em;cursor:pointer;text-shadow:none}
+.voice-toggle.on{border-color:#72ef9c;color:#72ef9c}
+.voice-toggle.on.talking{background:#1d5a37e6;box-shadow:0 0 0 2px #72ef9c66,0 0 14px #72ef9c88}
+.voice-lobby{display:block;width:100%;margin:8px 0 2px;padding:9px 12px;border:1px solid #8fb6c9;border-radius:3px;background:#102b3d;color:#cfe3ee;font:700 12px "DM Sans",sans-serif;letter-spacing:.06em;cursor:pointer}
+.voice-tags{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.voice-tag{position:absolute;left:0;top:0;padding:2px 7px;border-radius:10px;background:#0e2536b3;color:#cfe3ee;font:700 10px "DM Sans",sans-serif;letter-spacing:.04em;white-space:nowrap;transition:background .12s,box-shadow .12s}
+.voice-tag.talking{background:#1d7a45e6;color:#fff;box-shadow:0 0 10px #72ef9caa}
+.voice-tag.far{opacity:.45}
