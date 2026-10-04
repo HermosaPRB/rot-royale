@@ -1,5 +1,7 @@
 # Airdrop — feature spec
 
+Current gameplay amendments: the cinematic is 4 seconds. Once claimed, either special weapon stays with its owner until the match ends, including through death and respawn. The RPG has a one-rocket magazine and the Toilet Gun a five-shot magazine; both have unlimited reserve ammo and must reload. Respawn refills the magazine. The special is not a respawn-menu choice; that menu still chooses the owner's standard fallback gun. These rules supersede the original limited-ammo/lost-on-death checks below.
+
 Reference art: `work/airdrop-refs/dino-plane.png` (the plane) and `work/airdrop-refs/skibidi-toilet-gun.png` (one of the two loot items). Use them as modeling references for low-poly procedural three.js models, the same way the existing characters and guns are built. They are not textures.
 
 ## Summary
