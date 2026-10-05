@@ -261,7 +261,7 @@ const colliders=[];
 const ladders=[];
 const shotBlockers=[];
 const materials=new Map();
-const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},factory:{name:'MIDNIGHT MOZZARELLA',description:'Compact three-floor factory · twin belts · dense machinery cover',spawns:[[-18,-20],[18,20],[-18,20],[18,-20],[0,-22],[0,22]],pickups:[['case',-21.5,0],['case',21.5,0],['health',0,-22],['health',0,22]],sky:0x142b43},surf:{name:'SURF CIRCUIT',description:'Four stages · banked ramps · air-strafe course',spawns:[[0,0]],pickups:[],sky:0x081a2c}};
+const MAPS={neon:{name:'NEON TOWN',description:'Two houses · vehicle choke · garden flanks',spawns:[[-18,-27],[18,27],[-27,0],[27,0],[-4,-28],[4,28]],pickups:[['case',-22,25],['case',22,-25],['health',0,-20],['health',0,20],['health',-14,0]],sky:0x96cfeb},piazza:{name:'PIAZZA PANIC',description:'Italian plaza · markets · fountain cover',spawns:[[-25,-29],[25,23],[-23,24],[25,-29],[0,30],[0,-30]],pickups:[['case',-30,0],['case',30,0],['health',0,26],['health',0,-26],['health',-22,5]],sky:0x82c9e8},factory:{name:'MIDNIGHT MOZZARELLA',description:'Compact three-floor factory · twin belts · dense machinery cover',spawns:[[-18,-20],[18,20],[-18,20],[18,-20],[0,-22],[0,22]],pickups:[['case',-21.5,0],['case',21.5,0],['health',0,-22],['health',0,22]],sky:0x142b43}};
 const RARITIES=[{name:'STANDARD',color:0xb9c5d1,damage:1,rate:1,reload:1},{name:'RARE',color:0x5bbbff,damage:1.06,rate:.97,reload:.96},{name:'EPIC',color:0xcf83ff,damage:1.12,rate:.94,reload:.92},{name:'LEGENDARY',color:0xffce62,damage:1.18,rate:.90,reload:.88}];
 const CYBER_NAMES={ar:'Ion Pulse AR',shotgun:'Nova Scattergun',sniper:'Prism Rail Sniper',smg:'Volt Shredder'};
 const pickupMeshes=new Map(),mapCache=new Map();let builtMap=null;
@@ -1843,12 +1843,11 @@ $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code
 $('respawn-weapons').onclick=e=>{const button=e.target.closest('[data-respawn-weapon]');if(button)chooseRespawnWeapon(button.dataset.respawnWeapon)};
 $('map-select').onchange=e=>{if(state.mode==='home'){setMap(e.target.value);updateLobbyModeUI()}};
 function updateLobbyModeUI(){
-  const surf=state.map==='surf';
-  $('create-room').style.display=surf?'none':'';$('room-panel').style.display=surf?'none':'';
-  $('practice').querySelector('span').textContent=surf?'Start Surfing':'Practice';
-  $('practice').querySelector('small').textContent=surf?'Four-stage skill course · no combat':'Play against bots';
-  $('match-badge').innerHTML=surf?'Solo <span>CS-style surf</span>':'Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=surf?'Jump in · hold A/D into the bank · tap jump to cross gaps · R restarts':state.map==='factory'?'Three floors: climb E-ladders from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
-  $('win-rule').textContent=surf?'Reach the gold finish gate. Falling returns you to the latest checkpoint.':'Most eliminations in 3 minutes wins.';
+  $('create-room').style.display='';$('room-panel').style.display='';
+  $('practice').querySelector('span').textContent='Practice';
+  $('practice').querySelector('small').textContent='Play against bots';
+  $('match-badge').innerHTML='Free-for-all <span>3-minute rounds</span>';
+  $('match-summary').textContent=state.map==='factory'?'Three floors: climb E-ladders from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
+  $('win-rule').textContent='Most eliminations in 3 minutes wins.';
 }
 renderKeybinds();buildChoices();initWorld();showScreen('home');
