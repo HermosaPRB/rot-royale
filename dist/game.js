@@ -55,7 +55,7 @@ function setKeybind(action,code){
   keybinds[action]=code;rebindingAction=null;saveKeybinds();renderKeybinds();
 }
 const CHARACTERS = [
-  {id:'wooden',name:'Wooden Bonker',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
+  {id:'wooden',name:'Triple T',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
   {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'}
 ];
 const WEAPONS = {
@@ -280,7 +280,7 @@ function setMap(id){
   const sun=scene.getObjectByName('arena-sun'),ambient=scene.getObjectByName('arena-ambient');if(sun)sun.intensity=id==='factory'?1.3:3.2;if(ambient)ambient.intensity=id==='factory'?1.5:2.2;
   const cached=mapCache.get(id);cached.pickups??=MAPS[id].pickups.map(([kind,x,z])=>{const mesh=createPickupMesh(kind);mesh.position.set(x,0,z);return mesh});cached.pickups.forEach((mesh,i)=>{world.add(mesh);pickupMeshes.set(i,mesh)});
 }
-function resetPickups(){state.pickups=MAPS[state.map].pickups.map(([kind,x,z],id)=>({id,kind,x,z,readyAt:Date.now()+(kind==='case'?20000:0)}))}
+function resetPickups(){caseWaits.clear();state.pickups=MAPS[state.map].pickups.map(([kind,x,z],id)=>({id,kind,x,z,readyAt:Date.now()+(kind==='case'?20000:0)}))}
 function applyLootAward(d){
   if(!state.matchActive||!Object.hasOwn(WEAPONS,d.weapon))return;
   stopEmote();
@@ -289,13 +289,20 @@ function applyLootAward(d){
   updateWeaponModel();updateHud();const w=weaponStats(d.weapon),r=RARITIES[w.tier];
   $('loot-notice').textContent=`${r.name} UNLOCK · ${w.name} · +${Math.round((r.damage-1)*100)}% damage`;$('loot-notice').style.color='#'+r.color.toString(16).padStart(6,'0');state.lootNoticeUntil=performance.now()+4200;
 }
+const caseWaits=new Map();
+function caseReady(p,item,now){const key=p.id+':'+item.id,old=caseWaits.get(key);
+  if(!p.alive||p.grounded===false||(p.y??1.7)>2.7||Math.hypot(p.x-item.x,p.z-item.z)>2){caseWaits.delete(key);return false}
+  if(!old||Math.hypot(p.x-old.x,p.z-old.z)>.08||now-old.last>250){caseWaits.set(key,{x:p.x,z:p.z,since:now,last:now});return false}
+  old.last=now;return now-old.since>=600;
+}
 function updatePickups(now){
-  if(!state.matchActive)return;
+  if(!state.matchActive||airdropFrozen())return;
   if(state.host){
     // The host owns availability, proximity, rarity rolls and health; clients cannot claim rewards.
     for(const item of state.pickups){if(Date.now()<item.readyAt)continue;
       for(const p of Object.values(state.players)){
-        if(!p.alive||(p.y??1.7)>2.7||Math.hypot(p.x-item.x,p.z-item.z)>1.35)continue;
+        if(item.kind==='case'){if(p.bot||!caseReady(p,item,now))continue}
+        else if(!p.alive||(p.y??1.7)>2.7||Math.hypot(p.x-item.x,p.z-item.z)>1.35)continue;
         if(item.kind==='health'){
           if(p.health>=100)continue;item.readyAt=Date.now()+35000;p.health=Math.min(100,p.health+35);
           if(p.id===state.id){state.health=p.health;toast('HEALTH RESTORED');updateHud()}else state.connections.get(p.id)?.send({t:'healed',health:p.health});
@@ -514,6 +521,7 @@ function handleHostMessage(d,from){
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
   if(d.t==='melee'){openHolds.delete(from);resolveMelee(from)}
   if(d.t==='openStart')hostOpenStart(from);
+  if(d.t==='openCancel')openHolds.delete(from);
   if(d.t==='openDrop')hostOpenDrop(from);
   if(d.t==='specialFire'){openHolds.delete(from);hostSpecialFire(from)}
   if(d.t==='specialReload')hostSpecialReload(from);
@@ -924,7 +932,7 @@ function advanceMovement(dt){if(isPlaying()){camera.rotation.y+=((state.keys.Arr
 function updateMovement(dt){
   if(!isPlaying())return;if(airdropFrozen()){state.velocityX=state.velocityZ=0;return}
   if(state.emoteUntil){if(Date.now()>=state.emoteUntil||['KeyW','KeyA','KeyS','KeyD','Space'].some(k=>state.keys[k]))stopEmote();else{updateVerticalMovement(dt);return}}
-  updateLadderHint();if(state.climbing!==null){updateClimbing(dt);return}
+  updateLadderHint(dt);if(state.climbing!==null){updateClimbing(dt);return}
   const forwardInput=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),sideInput=(state.keys.KeyD?1:0)-(state.keys.KeyA?1:0),forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();
   const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(),wish=forward.multiplyScalar(forwardInput).addScaledVector(right,sideInput),moving=wish.lengthSq()>0;wish.normalize();
   const previousSpeed=Math.hypot(state.velocityX,state.velocityZ);
@@ -1051,9 +1059,16 @@ function updateVerticalMovement(dt){
   state.onGround=next<=ground;if(state.onGround){if(!wasGround&&impactSpeed>3){state.landingGrace=.12;landingKick=Math.min(.12,impactSpeed*.008);tone(85,.065,.02,'triangle',0,35)}next=ground;state.velocityY=0}camera.position.y=next+1.7;
 }
 function nearbyLadder(){const foot=camera.position.y-1.7;return ladders.findIndex(l=>Math.hypot(camera.position.x-l.x,camera.position.z-l.z)<1.85&&foot>=l.bottom-.3&&foot<=l.top+.35)}
-function updateLadderHint(){const near=nearbyLadder();$('ladder-hint').textContent=state.climbing!==null?'W / S · CLIMB   SPACE / E · LET GO':near>=0?`E · GRAB ${state.map==='factory'?'CATWALK':'ROOFTOP'} LADDER`:''}
+function interactionStill(){return state.onGround&&!state.fireHeld&&!state.reloading&&!state.buildMode&&!['KeyW','KeyA','KeyS','KeyD','Space'].some(k=>state.keys[k])&&Math.hypot(state.velocityX,state.velocityZ)<.3}
+let ladderWait=0,ladderCandidate=-1,ladderCooldown=0;
+function updateLadderHint(dt=0){const near=nearbyLadder();
+  if(near!==ladderCandidate){ladderCandidate=near;ladderWait=0}
+  if(state.climbing===null&&near>=0&&camera.position.y-1.7<ladders[near].top-.45&&interactionStill()&&performance.now()>ladderCooldown){ladderWait+=dt;if(ladderWait>=.45){stopEmote();toggleLadder();ladderWait=0}}else ladderWait=0;
+  const nearCase=state.pickups.some(p=>p.kind==='case'&&Date.now()>=p.readyAt&&camera.position.y<2.7&&Math.hypot(camera.position.x-p.x,camera.position.z-p.z)<=2);
+  $('ladder-hint').textContent=state.climbing!==null?'AUTO CLIMB · S DOWN · SPACE / E LET GO':near>=0?'STOP BESIDE LADDER · AUTO CLIMB':nearCase?'STAND STILL · CASE OPENS AUTOMATICALLY':'';
+}
 function toggleLadder(){
-  if(!isPlaying())return;if(state.climbing!==null){state.climbing=null;state.onGround=false;return}
+  if(!isPlaying())return;if(state.climbing!==null){state.climbing=null;state.onGround=false;ladderCooldown=performance.now()+1200;return}
   const index=nearbyLadder();if(index<0)return;const l=ladders[index];state.climbing=index;state.velocityX=state.velocityY=state.velocityZ=state.hopChain=0;state.onGround=false;camera.position.x=l.x;camera.position.z=l.z;
 }
 function interactOrEmote(){
@@ -1183,9 +1198,9 @@ function updateBuilding(){
 }
 function updateClimbing(dt){
   const l=ladders[state.climbing];if(!l){state.climbing=null;return}
-  if(state.keys.Space){state.climbing=null;state.velocityY=5;return}
-  const direction=(state.keys.KeyW?1:0)-(state.keys.KeyS?1:0),foot=clamp(camera.position.y-1.7+direction*3.6*dt,l.bottom,l.top);camera.position.set(l.x,foot+1.7,l.z);
-  if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0}
+  if(state.keys.Space){state.climbing=null;state.velocityY=5;ladderCooldown=performance.now()+1200;return}
+  const direction=state.keys.KeyS?-1:1,foot=clamp(camera.position.y-1.7+direction*3.6*dt,l.bottom,l.top);camera.position.set(l.x,foot+1.7,l.z);
+  if((direction>0&&foot>=l.top)||(direction<0&&foot<=l.bottom)){camera.position.set(l.exitX,foot+1.7,l.exitZ);state.climbing=null;state.onGround=true;state.velocityY=0;ladderCooldown=performance.now()+1200}
 }
 function hasClearShot(from,to){if(state.map==='factory'&&factorySteamBlocksSight(from,to))return false;const direction=new THREE.Vector3().subVectors(to,from),distance=direction.length();if(distance<.01)return false;raycaster.set(from,direction.normalize());raycaster.far=distance;return raycaster.intersectObjects(shotBlockers,false).length===0}
 function makeBotBrain(p,i,now){
@@ -1455,17 +1470,18 @@ function openDropLocal(pub){
 }
 function airdropSiren(){for(let i=0;i<3;i++){tone(520,.3,.045,'sawtooth',i*.38,900);tone(900,.3,.035,'sawtooth',i*.38+.17,520)}tone(78,2.4,.05,'sawtooth',0,60);tone(83,2.4,.035,'square',.04,64)}
 
-// Hold E beside the landed crate; the host re-checks range, timing and that nobody beat you to it.
+// Stand still beside the landed crate; the host re-checks range, timing and ownership.
 function tryStartAirdropOpen(){
   if(!drop||drop.openedBy||!drop.landed||!isPlaying()||state.openHold||airdropFrozen())return false;
   if(Math.hypot(camera.position.x-drop.x,camera.position.z-drop.z)>AIRDROP.OPEN_RANGE||Math.abs(camera.position.y-1.7-drop.y)>1.5)return false;
   stopEmote();state.openHold=performance.now();state.fireHeld=false;sendHost({t:'openStart'});return true;
 }
 function updateOpenHold(now){
-  const el=$('airdrop-hold'),near=!!drop&&drop.landed&&!drop.openedBy&&isPlaying()&&Math.hypot(camera.position.x-drop.x,camera.position.z-drop.z)<=AIRDROP.OPEN_RANGE+(state.openHold?.3:0);
-  el.classList.toggle('near',near);if(near)$('airdrop-hold-label').textContent=state.openHold?'OPENING…':`HOLD ${keyName(keybinds.emote)} · OPEN AIRDROP`;
+  const el=$('airdrop-hold'),near=!!drop&&drop.landed&&!drop.openedBy&&isPlaying()&&!airdropFrozen()&&Math.abs(camera.position.y-1.7-drop.y)<=1.5&&Math.hypot(camera.position.x-drop.x,camera.position.z-drop.z)<=AIRDROP.OPEN_RANGE;
+  if(near&&interactionStill()&&!state.openHold)tryStartAirdropOpen();
+  el.classList.toggle('near',near);if(near)$('airdrop-hold-label').textContent=state.openHold?'OPENING · STAY STILL…':'STOP BESIDE CRATE · AUTO OPEN';
   if(!state.openHold){el.classList.remove('show');el.style.setProperty('--p','0');return}
-  if(!near||!state.keys.KeyE||state.fireHeld){state.openHold=0;el.classList.remove('show');el.style.setProperty('--p','0');return}
+  if(!near||!interactionStill()){state.openHold=0;sendHost({t:'openCancel'});el.classList.remove('show');el.style.setProperty('--p','0');return}
   const p=clamp((now-state.openHold)/AIRDROP.OPEN_HOLD,0,1);el.classList.add('show');el.style.setProperty('--p',p.toFixed(3));
   if(p>=1){state.openHold=0;el.classList.remove('show');sendHost({t:'openDrop'})}
 }
@@ -1879,7 +1895,7 @@ function updateLobbyModeUI(){
   $('practice').querySelector('span').textContent='Practice';
   $('practice').querySelector('small').textContent='Play against bots';
   $('match-badge').innerHTML='Free-for-all <span>3-minute rounds</span>';
-  $('match-summary').textContent=state.map==='factory'?'Three floors: climb E-ladders from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
+  $('match-summary').textContent=state.map==='factory'?'Three floors: stop beside ladders to auto-climb from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
   $('win-rule').textContent='Most eliminations in 3 minutes wins.';
 }
 renderKeybinds();buildChoices();initWorld();showScreen('home');

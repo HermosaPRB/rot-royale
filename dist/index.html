@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css?v=voice-56">
   <link rel="stylesheet" href="./lobby.css?v=skins-29">
-  <link rel="stylesheet" href="./interface.css?v=podium-61">
+  <link rel="stylesheet" href="./interface.css?v=triple-t-63">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
@@ -41,8 +41,8 @@
         <section class="center-lobby" aria-label="Fighter preview and play">
           <div class="match-badge" id="match-badge">Free-for-all <span>3-minute rounds</span></div>
           <p class="match-summary" id="match-summary">Most eliminations wins. Respawn and keep playing.</p>
-          <div id="fighter-stage" class="fighter-stage" role="img" aria-label="3D preview of Wooden Bonker"></div>
-          <div class="fighter-caption"><h2 id="fighter-name">Wooden Bonker</h2><span id="loadout-caption">Espresso AR · Balanced / medium range</span></div>
+          <div id="fighter-stage" class="fighter-stage" role="img" aria-label="3D preview of Triple T"></div>
+          <div class="fighter-caption"><h2 id="fighter-name">Triple T</h2><span id="loadout-caption">Espresso AR · Balanced / medium range</span></div>
           <section class="loadout-panel" aria-label="Weapon presets">
             <div id="weapon-list" class="weapon-list" role="radiogroup" aria-label="Choose weapon"></div>
           </section>
@@ -67,7 +67,7 @@
           <label class="field-label" for="map-select">Map · host chooses</label><select id="map-select"><option value="neon">Neon Town</option><option value="piazza">Piazza Panic</option><option value="factory">Midnight Mozzarella</option></select>
           <div class="rule-heading">How to win</div>
           <p id="win-rule">Most eliminations in 3 minutes wins.</p>
-          <details class="match-rules"><summary>Rules & controls</summary><ul><li>Unlimited respawns · 3 seconds</li><li>Ctrl slides while moving · Space jumps out</li><li>M toggles sound</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over pickups to collect them</li><li>Stairs inside each Neon Town house</li><li>E dances · near ladders, E grabs them</li><li>B builds · T switches wall/ramp/floor · R rotates</li><li>Click to snap & stack · Unlimited builds · lasts 30s</li></ul></details>
+<details class="match-rules"><summary>Rules & controls</summary><ul><li>Unlimited respawns · 3 seconds</li><li>Ctrl slides while moving · Space jumps out</li><li>M toggles sound</li><li>Unlimited ammo · reload your magazine</li><li>Headshots deal double damage</li><li>F equips bat · click swings · 50 damage</li><li>Walk over health · stop beside cases to open</li><li>Stairs inside each Neon Town house</li><li>Stop beside ladders to auto-climb · Space lets go · E dances</li><li>B builds · T switches wall/ramp/floor · R rotates</li><li>Click to snap & stack · Unlimited builds · lasts 30s</li></ul></details>
           <details class="loot-rules"><summary>Cases & health</summary><p>Cyber cases arrive after 20s and refill 65s after collection. Unlocks last this round and survive death.</p><p>Roll: Rare 60% · Epic 30% · Legendary 10%. Damage +6% / +12% / +18%, with faster firing and reloads. Duplicates upgrade at least one tier; maxed weapons are skipped.</p><p>Cyber perks: AR tighter fire · shotgun 12 pellets · SMG stronger air steering · sniper pierces one player for 65% damage. Walls still stop shots.</p><p>Health packs restore 35 HP, up to 100, and refill after 35s.</p></details>
           <div class="room-tip">Create a room and share its code.<br>The host starts when friends arrive.</div>
         </aside>
@@ -149,7 +149,7 @@
       <div id="letterbox" class="letterbox" aria-hidden="true"><i></i><i></i></div>
       <div id="airdrop-banner" class="airdrop-banner" role="status" aria-live="assertive">AIRDROP<small>Supply crate inbound · map center</small></div>
       <div id="airdrop-marker" class="airdrop-marker" aria-hidden="true"><div class="airdrop-pin"><span class="airdrop-diamond"></span><small>AIRDROP · <b id="airdrop-distance">0m</b></small></div></div>
-      <div id="airdrop-hold" class="airdrop-hold"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" class="track"></circle><circle cx="22" cy="22" r="18" class="fill" pathLength="1"></circle></svg><small id="airdrop-hold-label">HOLD E · OPEN AIRDROP</small></div>
+      <div id="airdrop-hold" class="airdrop-hold"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" class="track"></circle><circle cx="22" cy="22" r="18" class="fill" pathLength="1"></circle></svg><small id="airdrop-hold-label">STOP BESIDE CRATE · AUTO OPEN</small></div>
       <div id="elimination-banner" class="elimination-banner">ELIMINATION <small id="elimination-name"></small></div>
       <button id="capture-mouse" class="capture-mouse" hidden>Enable free look · L</button><div id="control-hint" class="control-hint">WASD TO MOVE · CLICK TO CAPTURE MOUSE</div>
       <div id="ladder-hint" class="ladder-hint"></div>
@@ -167,6 +167,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=grip-62"></script>
+  <script type="module" src="./game.js?v=auto-interact-63"></script>
 </body>
 </html>

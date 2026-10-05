@@ -147,9 +147,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 /* Short respawns stay readable; results get their own lightweight 3D stage. */
 #respawn{background:#123146ac;backdrop-filter:blur(5px);text-shadow:none}
 #respawn .respawn-card{width:min(620px,94vw);padding:30px;background:#f0f8fc;color:#15374b;border:1px solid #bed7e3;border-radius:12px;box-shadow:0 24px 80px #06192655}
-#respawn .respawn-card>strong{display:block;margin-top:8px;font-size:clamp(1.6rem,4vw,2.2rem);letter-spacing:-.04em}
+#respawn .respawn-card>strong{display:block;margin:12px 0;font:400 clamp(1.65rem,4vw,2.4rem)/1.12 "Archivo Black",sans-serif;letter-spacing:-.045em;text-transform:uppercase;color:#17394e;text-shadow:2px 3px 0 #ffcf65;transform:rotate(-2deg)}
+#respawn .eyebrow{display:inline-block;background:#ffcf65;color:#17394e;padding:5px 12px;border-radius:3px;font:700 .75rem "DM Sans",sans-serif;letter-spacing:.13em}
 .respawn-clock{width:96px;height:96px;margin:20px auto 16px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;background:radial-gradient(circle,#f0f8fc 63%,transparent 65%),conic-gradient(#d4992b var(--respawn-progress,360deg),#d2e3ec 0)}
-#respawn-time{color:#17394e!important;font-size:2.8rem!important;margin:0!important}
+#respawn-time{color:#17394e!important;font:400 2.8rem/1 "Archivo Black",sans-serif!important;margin:0!important;text-shadow:2px 2px 0 #ffcf65;font-variant-numeric:tabular-nums}
 .respawn-clock small{font:700 .6rem "DM Sans",sans-serif;letter-spacing:.13em;color:#577487}
 #respawn .respawn-card p{color:#45677c;margin:10px 0;font-size:.9rem}
 #respawn .respawn-card>small{color:#577487;font-size:.8rem}
