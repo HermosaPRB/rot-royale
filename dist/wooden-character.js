@@ -114,8 +114,8 @@ function buildWoodenCharacter(detailed){
       sphere(warm,x,-.906,z,r,.035-toe*.002,.080-toe*.008,leg,10);
     }
     const arm=new THREE.Group();arm.name='arm-'+side;arm.position.set(side*.302,1.61,.022);root.add(arm);
-    const hand=side===1?[.078,-.245,-.362]:[.662,-.16,-.662];
-    const elbow=side===1?[.145,-.32,-.16]:[.11,-.33,-.34];
+    const hand=side===1?[-.125,-.241,-.887]:[.456,-.148,-1.137];
+    const elbow=side===1?[.045,-.34,-.43]:[-.015,-.31,-.66];
     tube([[0,0,0],[elbow[0]*.6,-.17,elbow[2]*.55],elbow,[hand[0],hand[1]-.02,hand[2]+.065],hand],[.045,.043,.032,.026,.028],warm,arm,18,9);
     sphere(warm,0,-.005,0,.043,.070,.045,arm);
     const [hx,hy,hz]=hand;

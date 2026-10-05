@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
-import { createWoodenCharacter } from './wooden-character.js?v=death-gun-50';
-import { createNeegyCharacter } from './neegy-character.js?v=death-gun-50';
+import { createWoodenCharacter } from './wooden-character.js?v=grip-62';
+import { createNeegyCharacter } from './neegy-character.js?v=grip-62';
 import { createHeldGun, createFirstPersonWeapon, createMeleeBat, createMeleeKnife } from './combat-models.js?v=airdrop-52';
 import { createDinoPlane, createSupplyCrate, createParachute, createBeacon, createSpecialGun, animateSpecialGun, createRocket, createOrb, createBlastFx, createVortexFx, disposeFx } from './airdrop.js?v=airdrop-52';
 import { mergeRigidParts } from './surface-details.js?v=detail-6';
@@ -251,7 +251,7 @@ let lobbyRenderer,lobbyScene,lobbyCamera,lobbyFighter;
 const lobbyFighters=new Map();
 const lobbyLook={x:0,y:0};
 function trackLobbyPointer(e){if(state.mode!=='home'||e.pointerType==='touch')return;const rect=$('fighter-stage').getBoundingClientRect();lobbyLook.x=clamp((e.clientX-rect.left-rect.width/2)/Math.max(200,innerWidth*.4),-1,1);lobbyLook.y=clamp((e.clientY-rect.top-rect.height*.4)/Math.max(160,innerHeight*.4),-1,1)}
-function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt),now=performance.now(),breath=Math.sin(now*.0022)*.006;lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);lobbyFighter.position.y=THREE.MathUtils.lerp(lobbyFighter.position.y,breath,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso){torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12+Math.sin(now*.0016)*.008,blend);torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,lobbyLook.x*.06,blend)}const gun=lobbyFighter.userData.gun;if(gun){gun.position.y=THREE.MathUtils.lerp(gun.position.y,(gun.userData.holdY||0)+breath*.8,blend);gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,Math.sin(now*.0018)*.006,blend)}}
+function updateLobbyLook(dt){if(!lobbyFighter)return;const blend=1-Math.exp(-10*dt),now=performance.now(),breath=Math.sin(now*.0022)*.006;lobbyFighter.rotation.y=THREE.MathUtils.lerp(lobbyFighter.rotation.y,-.2+lobbyLook.x*.85,blend);lobbyFighter.position.y=THREE.MathUtils.lerp(lobbyFighter.position.y,breath,blend);const torso=lobbyFighter.userData.avatar?.userData.danceTorso;if(torso){torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,-lobbyLook.y*.12+Math.sin(now*.0016)*.008,blend);torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,lobbyLook.x*.06,blend)}const gun=lobbyFighter.userData.gun;if(gun&&torso){gun.position.set(.06,(gun.userData.holdY||0)-.75,gun.userData.holdZ||0).applyEuler(torso.rotation);gun.position.y+=.75;gun.rotation.copy(torso.rotation)}}
 
 const weaponLabels={ar:'AR',shotgun:'SHOTGUN',sniper:'SNIPER',smg:'SMG'};
 const weaponDescriptions={ar:'Climbs up-right / tap for pinpoint accuracy',shotgun:'10-pellet blast / huge kick + shoves you back',sniper:'Quick scope / hard-hitting precision shots',smg:'Jittery spray / +14% movement'};
@@ -426,10 +426,11 @@ if(register){const color=new THREE.Color().setHSL(((String(p.id).split('').reduc
 }
 function poseHeldGun(gun,shape){
   if(shape==='wooden'||shape==='neegy'){
-    // A compact straight hold beside the torso; the arms meet the smaller grip.
-    gun.scale.setScalar(.88);
-    gun.position.x=.31;
-    gun.position.y=gun.userData.holdY=1.4*(1-.88);
+    // Bring the rifle in front of the chest, with clearance behind the stock.
+    gun.scale.setScalar(.78);
+    gun.position.x=.06;
+    gun.position.z=gun.userData.holdZ=-.60;
+    gun.position.y=gun.userData.holdY=1.4*(1-.78);
     gun.rotation.y=0;
   }
 }
@@ -469,7 +470,7 @@ function syncMeshes(dt=1/60){
     const step=Math.sin(u.stride),gait=u.walk*(1-u.air)*(1-slide),lift=Math.sin(now*.002+p.id.length)*.006+(1-Math.cos(u.stride*2))*.009*gait-landing*.055;
     const shotAge=now-(remoteShotTimes.get(p.id)??-Infinity),recoil=shotAge<220?Math.sin(Math.min(1,shotAge/220)*Math.PI)*(WEAPON_FEEL[p.weapon]?.remoteKick??.085):0;
     if(p.reloading&&!u.wasReloading)u.reloadAt=now;u.wasReloading=!!p.reloading;const reloadT=p.reloading?(now-(u.reloadAt||now))/900:0,reloadDip=p.reloading?Math.sin(Math.min(1,reloadT)*Math.PI):0;
-    u.gun.position.y=damp(u.gun.position.y,(u.gun.userData.holdY||0)+lift-reloadDip*.05-slide*.62-deathKneel*.15,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:slide*.08+deathFall*.24,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.13+deathFall*.18,14);u.gun.position.z=damp(u.gun.position.z,recoil+slide*.10,28);
+    u.gun.position.y=damp(u.gun.position.y,(u.gun.userData.holdY||0)+lift-reloadDip*.05-slide*.62-deathKneel*.15,22);u.gun.rotation.x=damp(u.gun.rotation.x,p.reloading?-.38:slide*.08+deathFall*.24,14);u.gun.rotation.z=damp(u.gun.rotation.z,p.reloading?-.10:slide*.13+deathFall*.18,14);u.gun.position.z=damp(u.gun.position.z,(u.gun.userData.holdZ||0)+recoil+slide*.10,28);
     if(!u.gun.userData.flash){const flash=new THREE.Mesh(new THREE.ConeGeometry(.10,.22,5),new THREE.MeshBasicMaterial({color:tier?RARITIES[tier].color:0xffd875,transparent:true,opacity:.85,depthWrite:false}));flash.rotation.x=-Math.PI/2;flash.position.z=-.07;flash.userData.noHit=true;u.gun.userData.muzzle.add(flash);u.gun.userData.flash=flash}u.gun.userData.flash.visible=now-(remoteShotTimes.get(p.id)??-Infinity)<65&&p.alive!==false;
     if(avatar){avatar.position.y=damp(avatar.position.y,lift-slide*.64-deathKneel*.16,20);
       const torso=avatar.userData.danceTorso,emoting=p.emoteUntil>Date.now();if(torso&&!emoting){torso.position.x=damp(torso.position.x,step*.008*gait,12);torso.position.y=damp(torso.position.y,.75-slide*.04-deathKneel*.08,16);torso.position.z=damp(torso.position.z,slide*.09+deathKneel*.12,16);torso.rotation.x=damp(torso.rotation.x,slide*.30-landing*.055-.035*gait-deathKneel*.25,16);torso.rotation.y=damp(torso.rotation.y,step*.012*gait*(p.aiming?.25:1),12);torso.rotation.z=damp(torso.rotation.z,-step*.012*gait+slide*.045+(reaction?.side||1)*deathKneel*.12,12)}

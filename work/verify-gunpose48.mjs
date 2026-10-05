@@ -10,20 +10,23 @@ vm.runInContext(source,ctx);const run=s=>vm.runInContext(s,ctx);
 for(const skin of ['wooden','neegy'])for(const weapon of ['ar','smg','shotgun','sniper']){
   const model=run(`createPlayerMesh({id:'preview',char:'${skin}',weapon:'${weapon}'},false)`),gun=model.userData.gun,avatar=model.userData.avatar;
   assert.equal(gun.rotation.y,0,`${skin} ${weapon} points straight ahead`);
-  assert.equal(gun.scale.x,.88,`${skin} ${weapon} uses compact third-person scale`);
+  assert.equal(gun.scale.x,.78,`${skin} ${weapon} uses compact third-person scale`);
   model.updateMatrixWorld(true);
   const trigger=avatar.getObjectByName('trigger-hand').getWorldPosition(new THREE.Vector3());
   const support=avatar.getObjectByName('support-hand').getWorldPosition(new THREE.Vector3());
   const triggerOnGun=gun.localToWorld(new THREE.Vector3(.15,1.36,-.34));
   const supportOnGun=gun.localToWorld(new THREE.Vector3(.12,1.48,-.66));
-  assert.ok(trigger.distanceTo(triggerOnGun)<.13,`${skin} ${weapon} trigger hand misses grip`);
-  assert.ok(support.distanceTo(supportOnGun)<.16,`${skin} ${weapon} support hand misses fore-end`);
+  assert.ok(trigger.distanceTo(triggerOnGun)<.04,`${skin} ${weapon} trigger hand misses grip`);
+  assert.ok(support.distanceTo(supportOnGun)<.04,`${skin} ${weapon} support hand misses fore-end`);
   let rearMinX=Infinity,count=0;
   gun.traverse(m=>{if(!m.isMesh)return;const a=m.geometry.attributes.position;for(let i=0;i<a.count;i++){
     const p=m.localToWorld(new THREE.Vector3().fromBufferAttribute(a,i));
-    if(p.z>.13&&p.y>1.25&&p.y<1.65){rearMinX=Math.min(rearMinX,p.x);count++}
+    if(p.z>-.45&&p.y>1.25&&p.y<1.65){assert.ok(p.z<-.30,`${skin} ${weapon} stock enters torso`);rearMinX=Math.min(rearMinX,p.x);count++}
   }});
   assert.ok(count>0,`${skin} ${weapon} has a stock`);
-  assert.ok(rearMinX>.30,`${skin} ${weapon} stock enters the torso: ${rearMinX}`);
+  assert.ok(trigger.distanceTo(support)>.24,`${skin} ${weapon} hands must grip separate parts`);
+  ctx.preview=model;run('lobbyFighter=preview;lobbyLook.x=1;lobbyLook.y=1;updateLobbyLook(1)');model.updateMatrixWorld(true);
+  assert.ok(avatar.getObjectByName('trigger-hand').getWorldPosition(new THREE.Vector3()).distanceTo(gun.localToWorld(new THREE.Vector3(.15,1.36,-.34)))<.04,'lobby mouse-follow keeps trigger hand attached');
+  assert.ok(avatar.getObjectByName('support-hand').getWorldPosition(new THREE.Vector3()).distanceTo(gun.localToWorld(new THREE.Vector3(.12,1.48,-.66)))<.04,'lobby mouse-follow keeps support hand attached');
   console.log(`${skin} ${weapon}: hands near grips, rear stock outside torso (${rearMinX.toFixed(2)})`);
 }
