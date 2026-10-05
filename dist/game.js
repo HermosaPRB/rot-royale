@@ -55,7 +55,7 @@ function setKeybind(action,code){
   keybinds[action]=code;rebindingAction=null;saveKeybinds();renderKeybinds();
 }
 const CHARACTERS = [
-  {id:'wooden',name:'Triple T',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
+  {id:'wooden',name:'Bonkwood',emoji:'🪵',portrait:'./assets/wooden-bonker.png',color:0xc18a43,shape:'wooden'},
   {id:'neegy',name:'Neegy',emoji:'🥇',color:0xe5ac24,shape:'neegy'}
 ];
 const WEAPONS = {
