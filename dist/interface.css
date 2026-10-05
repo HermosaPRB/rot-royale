@@ -86,8 +86,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .player-pill{border-bottom:1px solid #c0d8e4;color:var(--ui-navy)}
 .player-pill .dot{width:9px;height:9px;background:#5b9fbd;border:0}
 .player-pill small{color:#477188;font-weight:700}
-.settings-card{display:flex;flex-direction:column;width:min(760px,100%);max-height:min(90dvh,800px);overflow:hidden}
-.settings-card .keybind-list{min-height:0;overflow:auto;padding-right:6px}
+.settings-card{display:flex;flex-direction:column;width:min(760px,100%);max-height:min(90dvh,800px);overflow:auto}
+.settings-card .keybind-list{flex:none;padding-right:6px}
+.look-settings{display:grid;gap:10px;flex:none;padding:16px 0;border-bottom:1px solid #c7dce7}
+.look-settings>label{display:flex;justify-content:space-between;font-weight:700;font-size:.95rem}
+.look-settings output{font-variant-numeric:tabular-nums;color:#315e77}
+.look-settings input[type=range]{width:100%;accent-color:#17394e;cursor:pointer}
+.preference-checks{display:flex;flex-wrap:wrap;gap:14px;margin-top:5px}
+.preference-checks label{display:flex;align-items:center;gap:8px;font-size:.9rem}
+.preference-checks input{width:18px;height:18px;accent-color:#17394e}
+.look-settings small{font-size:.8rem;color:#45677c;line-height:1.5}
 .settings-card .settings-actions{flex:none;padding-top:16px;margin-top:12px;border-top:1px solid #c7dce7}
 .settings-card>small{font-size:.78rem}
 .keybind-row{border-bottom:1px solid #c7dce7;color:var(--ui-navy)}

@@ -12,6 +12,11 @@ import { buildSurfMap, SURF_FLOOR_Y, SURF_SPAWN, SURF_FINISH_Z, SURF_CHECKPOINTS
 
 const $ = (id) => document.getElementById(id);
 const screens = ['home','settings','lobby','pause','results'];
+const DEFAULT_PREFERENCES={sensitivity:1,ads:1,invertY:false,cameraShake:true};
+function normalizePreferences(raw={}){raw=raw&&typeof raw==='object'?raw:{};return {sensitivity:Number.isFinite(raw.sensitivity)?Math.max(.2,Math.min(3,raw.sensitivity)):1,ads:Number.isFinite(raw.ads)?Math.max(.2,Math.min(2,raw.ads)):1,invertY:raw.invertY===true,cameraShake:raw.cameraShake!==false}}
+let preferences={...DEFAULT_PREFERENCES};try{preferences=normalizePreferences(JSON.parse(localStorage.getItem('rot-preferences-v1')))}catch{}
+function savePreferences(){try{localStorage.setItem('rot-preferences-v1',JSON.stringify(preferences))}catch{}}
+function renderPreferences(){for(const key of Object.keys(DEFAULT_PREFERENCES)){const input=$('pref-'+key);if(!input)continue;if(input.type==='checkbox')input.checked=preferences[key];else{input.value=preferences[key];$('value-'+key).textContent=preferences[key].toFixed(2)+'×'}input.oninput=()=>{preferences[key]=input.type==='checkbox'?input.checked:Number(input.value);preferences=normalizePreferences(preferences);savePreferences();if(input.type!=='checkbox')$('value-'+key).textContent=preferences[key].toFixed(2)+'×'}}}
 const DEFAULT_BINDS={
   forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',aim:'ShiftLeft',
   melee:'KeyF',reload:'KeyR',emote:'KeyE',build:'KeyB',buildType:'KeyT',inspect:'KeyI',
@@ -209,7 +214,7 @@ function updateCrosshair(now){
 }
 function renderGameplay(now){
   const view=gameplayCamera();if(view!==camera||!isPlaying()){renderer.render(scene,view);return}
-  const y=camera.position.y,pitch=camera.rotation.x,roll=camera.rotation.z,reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const y=camera.position.y,pitch=camera.rotation.x,roll=camera.rotation.z,reduced=!preferences.cameraShake||globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   camera.position.y-=slideView+(reduced?0:landingKick);if(!reduced&&state.aimBlend<.1){camera.rotation.x+=Math.sin(now*.09)*shotShake;camera.rotation.z+=Math.cos(now*.07)*shotShake*.35+slideView/SLIDE_DROP*.035}
   renderer.render(scene,camera);camera.position.y=y;camera.rotation.x=pitch;camera.rotation.z=roll;camera.updateMatrixWorld(true);
 }
@@ -345,6 +350,11 @@ function initLobbyPreview(){
   const key=new THREE.DirectionalLight(0xffe6b7,3);key.position.set(-3,5,-4);lobbyScene.add(key);
   const pedestal=new THREE.Mesh(new THREE.CylinderGeometry(.95,1.1,.10,32),mat(0x6babb7));pedestal.position.y=-.08;lobbyScene.add(pedestal);
   new ResizeObserver(()=>{const {width,height}=stage.getBoundingClientRect();if(!width||!height)return;lobbyRenderer.setSize(width,height,false);lobbyCamera.aspect=width/height;lobbyCamera.updateProjectionMatrix()}).observe(stage);
+  // Capture the existing model once; the fighter tile needs no extra renderer or animation loop.
+  const portraitScene=new THREE.Scene(),portraitCamera=new THREE.PerspectiveCamera(32,1,.1,10),portrait=createNeegyCharacter('preview');
+  portraitScene.add(portrait,new THREE.HemisphereLight(0xfff7dc,0x416c83,2.8));const portraitKey=new THREE.DirectionalLight(0xffe6b7,3);portraitKey.position.set(-3,5,-4);portraitScene.add(portraitKey);
+  portraitCamera.position.set(0,1.9,-2.7);portraitCamera.lookAt(0,1.9,0);lobbyRenderer.setSize(160,160,false);lobbyRenderer.render(portraitScene,portraitCamera);
+  CHARACTERS.find(c=>c.id==='neegy').portrait=lobbyRenderer.domElement.toDataURL('image/png');buildChoices();
   updateLobbyPreview();
 }
 function updateLobbyPreview(){
@@ -1845,9 +1855,9 @@ function handleMouseLook(e){
     }else{dx=Number.isFinite(e.movementX)?e.movementX:0;dy=Number.isFinite(e.movementY)?e.movementY:0}
   }
   state.mouseOver=true;
-  const sensitivity=LOOK_RADIANS_PER_PIXEL*aimSensitivity();
+  const sensitivity=LOOK_RADIANS_PER_PIXEL*preferences.sensitivity*aimSensitivity()*(1+(preferences.ads-1)*state.aimBlend);
   camera.rotation.order='YXZ';camera.rotation.y-=dx*sensitivity;
-  camera.rotation.x=clamp(camera.rotation.x-dy*sensitivity,-1.45,1.45);camera.rotation.z=0;
+  camera.rotation.x=clamp(camera.rotation.x-dy*sensitivity*(preferences.invertY?-1:1),-1.45,1.45);camera.rotation.z=0;
 }
 function requestMouseCapture(){
   unlockAudio();
@@ -1859,7 +1869,7 @@ function requestMouseCapture(){
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
 
-function openSettings(){rebindingAction=null;state.mode='settings';renderKeybinds();showScreen('settings')}
+function openSettings(){rebindingAction=null;state.mode='settings';renderKeybinds();renderPreferences();showScreen('settings')}
 function closeSettings(){rebindingAction=null;state.mode='home';showScreen('home');renderKeybinds()}
 function remapKeyboardEvent(e){
   if(e.type==='keydown'&&rebindingAction){
@@ -1884,7 +1894,7 @@ addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!
 $('capture-mouse').onclick=requestMouseCapture;
 for(const id of VOICE_BUTTONS)$(id).onclick=toggleVoice;updateVoiceUi();
 $('settings-open').onclick=openSettings;$('settings-close').onclick=closeSettings;
-$('settings-reset').onclick=()=>{keybinds={...DEFAULT_BINDS};rebindingAction=null;saveKeybinds();renderKeybinds();toast('Default controls restored')};
+$('settings-reset').onclick=()=>{keybinds={...DEFAULT_BINDS};preferences={...DEFAULT_PREFERENCES};savePreferences();renderPreferences();rebindingAction=null;saveKeybinds();renderKeybinds();toast('Default controls restored')};
 $('keybind-list').onclick=e=>{const button=e.target.closest?.('[data-bind]');if(!button)return;rebindingAction=button.dataset.bind;renderKeybinds()};
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 

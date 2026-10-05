@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191218'/%3E%3Ccircle cx='29' cy='32' r='18' fill='%23f2b84b'/%3E%3Cpath d='M40 25h7a8 8 0 0 1 0 16h-7' fill='none' stroke='%23fff7df' stroke-width='6'/%3E%3Cpath d='M21 28h16M22 36h13' stroke='%2373382c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css?v=voice-56">
   <link rel="stylesheet" href="./lobby.css?v=skins-29">
-  <link rel="stylesheet" href="./interface.css?v=triple-t-63">
+  <link rel="stylesheet" href="./interface.css?v=settings-65">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
@@ -81,14 +81,23 @@
     <section id="settings" class="screen" aria-labelledby="settings-title">
       <div class="modal-card settings-card">
         <div class="eyebrow">CONTROLS</div>
-        <h2 id="settings-title">Keybind settings</h2>
+        <h2 id="settings-title">Make it feel right.</h2>
+        <div class="look-settings">
+          <label for="pref-sensitivity">Mouse sensitivity <output id="value-sensitivity">1.00×</output></label>
+          <input id="pref-sensitivity" type="range" min="0.2" max="3" step="0.05" value="1">
+          <label for="pref-ads">Aiming sensitivity <output id="value-ads">1.00×</output></label>
+          <input id="pref-ads" type="range" min="0.2" max="2" step="0.05" value="1">
+          <div class="preference-checks"><label><input id="pref-invertY" type="checkbox"> Invert vertical look</label><label><input id="pref-cameraShake" type="checkbox" checked> Camera shake</label></div>
+          <small>Saved on this device. Aiming sensitivity multiplies your scoped mouse speed.</small>
+        </div>
+        <h3>Keybinds</h3>
         <p>Choose an action, then press its new key. Conflicting keys swap automatically.</p>
         <div id="keybind-list" class="keybind-list"></div>
         <div class="settings-actions">
           <button id="settings-reset" class="text-button" type="button">Restore defaults</button>
           <button id="settings-close" class="primary" type="button">Done</button>
         </div>
-        <small>Mouse look, firing, and Escape remain fixed.</small>
+        <small>Firing and Escape cannot be rebound.</small>
       </div>
     </section>
 
@@ -167,6 +176,6 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=bonkwood-64"></script>
+  <script type="module" src="./game.js?v=settings-65"></script>
 </body>
 </html>
