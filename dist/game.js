@@ -505,23 +505,39 @@ function broadcast(msg){if(!state.host)return;state.connections.forEach(c=>{if(c
 function sendHost(msg){if(state.host)handleHostMessage(msg,state.id);else if(state.conn?.open)state.conn.send(msg)}
 function hostSnapshot(){state.players[state.id]=myPublic();const serverTime=performance.now();state.netSnapshotTime=serverTime;recordCombatHistory(serverTime);broadcast({t:'snapshot',serverTime,players:state.players,end:state.matchEnd,active:state.matchActive,map:state.map,pickups:state.pickups,builds:state.builds,airdrop:publicDrop()})}
 
+let roomGeneration=0,roomConnecting=false,roomTimer=null;
+const pendingConnections=new Set();
+function setRoomConnecting(active){roomConnecting=active;for(const id of ['create-room','join-room','practice'])$(id).disabled=active}
+function watchRoomConnection(generation){clearTimeout(roomTimer);roomTimer=setTimeout(()=>{if(generation===roomGeneration&&roomConnecting){const ice=state.conn?.peerConnection?.iceConnectionState;leaveToHome(ice==='checking'||ice==='failed'?'Room found, but the direct connection failed. Try another network or browser.':'Connection timed out. Check the room code and try again.')}},12000)}
 function createRoom(){
+  if(roomConnecting)return;
   state.host=true;state.practice=false;state.room=roomCode();state.id='host';resetPeer();setError('');
-  const peerId=`rot-royale-${state.room.toLowerCase()}`;state.peer=new Peer(peerId);wireVoicePeer(state.peer);
-  state.peer.on('open',()=>{state.id=peerId;state.players={};seedSelf();enterLobby();state.peer.on('connection',acceptConnection)});
-  state.peer.on('error',peerError);
+  const generation=roomGeneration,peerId=`rot-royale-${state.room.toLowerCase()}`;setRoomConnecting(true);setError('Creating your room…');watchRoomConnection(generation);state.peer=new Peer(peerId);const peer=state.peer;wireVoicePeer(peer);
+  peer.on('open',()=>{if(generation!==roomGeneration)return;state.id=peerId;state.players={};seedSelf();setError('');enterLobby()});
+  peer.on('connection',c=>{if(generation!==roomGeneration){c.close();return}acceptConnection(c)});
+  peer.on('error',err=>{if(generation===roomGeneration)peerError(err)});
 }
 function joinRoom(){
-  const code=$('room-code-input').value.trim().toUpperCase();if(code.length!==6){setError('Enter the 6-character room code.');return}
+  if(roomConnecting)return;
+  const code=$('room-code-input').value.trim().toUpperCase();if(!/^[A-Z2-9]{6}$/.test(code)){setError('Enter the 6-character room code.');return}
   state.host=false;state.practice=false;state.room=code;resetPeer();setError('Connecting to the plaza…');state.peer=new Peer();wireVoicePeer(state.peer);
-  state.peer.on('open',id=>{state.id=id;const c=state.peer.connect(`rot-royale-${code.toLowerCase()}`,{reliable:true,metadata:{name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon}});state.conn=c;wireClient(c);setTimeout(()=>{if(state.mode==='home'&&$('connection-error').textContent.includes('Connecting'))leaveToHome('Could not reach that room. Check that the host is still in the lobby.')},9000)});state.peer.on('error',peerError);
+  const generation=roomGeneration;setRoomConnecting(true);watchRoomConnection(generation);
+  state.peer.on('open',id=>{if(generation!==roomGeneration)return;state.id=id;const c=state.peer.connect(`rot-royale-${code.toLowerCase()}`,{reliable:true,metadata:{name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon}});state.conn=c;wireClient(c,generation)});state.peer.on('error',err=>{if(generation===roomGeneration)peerError(err)});
 }
 function acceptConnection(c){
-  if(Object.keys(state.players).length>=6){c.on('open',()=>{c.send({t:'reject',reason:'That room is full.'});setTimeout(()=>c.close(),100)});return}
-  c.on('open',()=>{const requestedChar=c.metadata?.char,char=CHARACTERS.some(x=>x.id===requestedChar)?requestedChar:'wooden';state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:(c.metadata?.name||'New Rot').slice(0,16),char,weapon:Object.hasOwn(WEAPONS,c.metadata?.weapon)?c.metadata.weapon:'ar',...spawnFor(state.connections.size),kills:0,deaths:0,health:100,alive:true,arsenal:{}};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id,map:state.map});hostSnapshot();updateLobby()});
-  c.on('data',d=>handleHostMessage(d,c.peer));c.on('close',()=>{state.connections.delete(c.peer);delete state.players[c.peer];broadcast({t:'snapshot',players:state.players,end:state.matchEnd,active:state.matchActive});updateLobby()});
+  const generation=roomGeneration;let admitted=false;
+  const unavailable=()=>state.mode!=='lobby'?'This match has started. Ask the host to return to the lobby.':state.connections.has(c.peer)?'Already connected to this room.':Object.keys(state.players).length>=6?'That room is full.':null;
+  const reject=reason=>{try{c.send({t:'reject',reason})}catch{}setTimeout(()=>c.close(),150)};
+  // Reserve capacity while WebRTC finishes opening, then recheck atomically on admission.
+  const reason=unavailable()||(Object.keys(state.players).length+pendingConnections.size>=6?'That room is full.':null);
+  if(reason){c.on('open',()=>reject(reason));setTimeout(()=>c.close(),12000);return}
+  pendingConnections.add(c);const timer=setTimeout(()=>{pendingConnections.delete(c);if(!admitted)c.close()},12000);
+  c.on('open',()=>{pendingConnections.delete(c);clearTimeout(timer);if(generation!==roomGeneration){c.close();return}const reason=unavailable();if(reason){reject(reason);return}admitted=true;
+    const requestedChar=c.metadata?.char,char=CHARACTERS.some(x=>x.id===requestedChar)?requestedChar:'wooden';state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:String(c.metadata?.name||'New Rot').slice(0,16),char,weapon:Object.hasOwn(WEAPONS,c.metadata?.weapon)?c.metadata.weapon:'ar',...spawnFor(state.connections.size),kills:0,deaths:0,health:100,alive:true,arsenal:{}};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id,map:state.map});hostSnapshot();updateLobby()});
+  c.on('data',d=>{if(generation===roomGeneration&&admitted&&state.connections.get(c.peer)===c)handleHostMessage(d,c.peer)});
+  const cleanup=()=>{clearTimeout(timer);pendingConnections.delete(c);if(generation!==roomGeneration||state.connections.get(c.peer)!==c)return;state.connections.delete(c.peer);delete state.players[c.peer];hostSnapshot();updateLobby()};c.on('close',cleanup);c.on('error',()=>{cleanup();c.close()});
 }
-function wireClient(c){c.on('open',()=>setError(''));c.on('data',d=>handleClientMessage(d));c.on('close',()=>leaveToHome('The host closed the room.'));c.on('error',peerError)}
+function wireClient(c,generation=roomGeneration){const current=()=>generation===roomGeneration&&state.conn===c;c.on('data',d=>{if(current())handleClientMessage(d)});c.on('close',()=>{if(current())leaveToHome('The host disconnected. Ask them to create a new room, then join again.')});c.on('error',err=>{if(current())peerError(err)})}
 function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
   if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
@@ -579,16 +595,16 @@ function syncLocalFromSnapshot(){
   updateHud();
 }
 function peerError(err){const msg=err.type==='peer-unavailable'?'Room not found. Check the code and try again.':'Connection trouble. Try creating or joining the room again.';leaveToHome(msg)}
-function resetPeer(){stopVoice(false);if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
+function resetPeer(){roomGeneration++;clearTimeout(roomTimer);setRoomConnecting(false);pendingConnections.forEach(c=>c.close());pendingConnections.clear();stopVoice(false);if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
 function setError(s){$('connection-error').textContent=s}
 
-function enterLobby(){state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby()}
+function enterLobby(){clearTimeout(roomTimer);setRoomConnecting(false);state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby()}
 function updateLobby(){
   const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}${p.voice?' 🔊':''}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
   $('start-match').style.display=state.host?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
 }
 function startMatch(){
-  if(!state.host)return;
+  if(!state.host||state.matchActive||(!state.practice&&(state.mode!=='lobby'||Object.keys(state.players).length<2)))return;
   state.matchEnd=state.map==='surf'?Infinity:Date.now()+180000;state.arsenal={};
   const slots=MAPS[state.map].spawns.map((_,i)=>i);for(let i=slots.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]]}
   Object.values(state.players).forEach((p,i)=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true,arsenal:{},nextWeapon:p.weapon,...(state.map==='surf'?{x:SURF_SPAWN[0],y:SURF_SPAWN[1],z:SURF_SPAWN[2]}:spawnFor(slots[i%slots.length]))}));

@@ -11,7 +11,8 @@ http.createServer((req,res)=>{
     for(const label of ['Show podium','Show respawn','Two players']){const b=document.createElement('button');b.textContent=label;testbar.appendChild(b);b.onclick=()=>{
       if(label==='Show respawn'){state.matchActive=true;state.alive=false;state.respawnAt=Date.now()+3000;state.pendingWeapon='ar';showScreen('game');state.mode='pause';$('hud').classList.add('active');renderRespawnLoadout();$('respawn').classList.add('active');return}
       state.matchActive=true;state.practice=true;state.host=false;const players={a:{id:'a',name:'Golden Espresso',char:'neegy',weapon:'sniper',kills:21,deaths:4},b:{id:'b',name:'Wooden Bonker',char:'wooden',weapon:'ar',kills:16,deaths:7},c:{id:'c',name:'Pasta Patrol',char:'neegy',weapon:'smg',kills:12,deaths:9},d:{id:'d',name:'Fourth Place',char:'wooden',weapon:'shotgun',kills:6,deaths:10}};state.id='b';if(label==='Two players'){delete players.c;delete players.d}finishMatch(players);
-    }}document.body.appendChild(testbar);`;
+    }}document.body.appendChild(testbar);
+    let lastNetwork='';setInterval(()=>{const status=JSON.stringify({peer:state.peer?.open,mode:state.mode,pending:[...pendingConnections].map(c=>({open:c.open,ice:c.peerConnection?.iceConnectionState})),connection:state.conn?{open:state.conn.open,ice:state.conn.peerConnection?.iceConnectionState,signal:state.conn.peerConnection?.signalingState}:null});if(status!==lastNetwork){console.log('Lobby diagnostic',status);lastNetwork=status}},500);`;
     res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'application/octet-stream');res.end(body);
   }catch{res.writeHead(404);res.end()}
-}).listen(4174,'127.0.0.1',()=>console.log('Results fixture http://127.0.0.1:4174'));
+}).listen(Number(process.env.PREVIEW_PORT||4174),'127.0.0.1',()=>console.log('Local fixture ready'));
