@@ -184,7 +184,7 @@ function slideVelocity(vx,vz,wx,wz,age,dt){
 }
 function movementSpeed(){return state.equipped==='bat'?1.08:gunStats().move||1}
 function updateTargetCard(now){
-  if(!isPlaying()||state.emoteUntil){$('target-card').classList.remove('visible');return}if(now-targetCheckAt<80)return;targetCheckAt=now;
+  if(!state.practice||!isPlaying()||state.emoteUntil){$('target-card').classList.remove('visible');return}if(now-targetCheckAt<80)return;targetCheckAt=now;
   const forward=new THREE.Vector3();camera.getWorldDirection(forward);let target=null,best=.965;world.updateMatrixWorld(true);
   for(const p of Object.values(state.players)){if(p.id===state.id||p.alive===false)continue;const point=new THREE.Vector3(p.x,(p.y??1.7)-.35,p.z),delta=point.clone().sub(camera.position),distance=delta.length(),dot=delta.normalize().dot(forward);if(distance<50&&dot>best&&hasClearShot(camera.position,point)){target=p;best=dot}}
   $('target-card').classList.toggle('visible',!!target);if(target){$('target-name').textContent=target.name;$('target-health').style.width=`${clamp(target.health,0,100)}%`;$('target-health').style.background=target.health<30?'#ff826c':'#72ef9c'}
@@ -1855,10 +1855,10 @@ function updateVoice(now){
   const talking=state.voiceOn&&voiceLevel(voiceLocalAnalyser)>VOICE.talkLevel;for(const id of VOICE_BUTTONS)$(id).classList.toggle('talking',talking);
   updateVoiceTags();
 }
-// Speaker pills over players who are in voice; they light up while that player is talking.
+// Practice-only speaker pills. Online voice must never reveal enemy locations/names.
 function updateVoiceTags(){
   const root=$('voice-tags'),seen=new Set();
-  if(state.matchActive&&isPlaying()&&!airdropCinematicActive())for(const p of Object.values(state.players)){
+  if(state.practice&&state.matchActive&&isPlaying()&&!airdropCinematicActive())for(const p of Object.values(state.players)){
     if(p.id===state.id||!(p.voice||(p.bot&&banterOn))||p.alive===false)continue;const mesh=playerMeshes.get(p.id);if(!mesh?.visible)continue;
     _voicePos.set(mesh.position.x,mesh.position.y+2.45,mesh.position.z);const distance=_voicePos.distanceTo(camera.position);if(distance>VOICE.tagRange)continue;
     const s=_voicePos.clone().project(camera);if(s.z>1||Math.abs(s.x)>1.05||Math.abs(s.y)>1.05)continue;
