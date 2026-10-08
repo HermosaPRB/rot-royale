@@ -21,14 +21,14 @@ const DEFAULT_BINDS={
   forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',aim:'ShiftLeft',
   melee:'KeyF',reload:'KeyR',emote:'KeyE',build:'KeyB',buildType:'KeyT',inspect:'KeyI',
   slide:'ControlLeft',sound:'KeyM',capture:'KeyL',turnLeft:'ArrowLeft',turnRight:'ArrowRight',
-  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4',voice:'KeyV'
+  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4',voice:'KeyV',talk:'KeyG'
 };
 const BIND_LABELS={
   forward:'Move forward',back:'Move backward',left:'Move left',right:'Move right',jump:'Jump / bunny hop',
   aim:'Aim',melee:'Gun / bat',reload:'Reload / rotate build',emote:'Emote / interact',build:'Build mode',
   buildType:'Change build piece',inspect:'Inspect weapon',slide:'Slide',sound:'Toggle sound',
   capture:'Capture mouse',turnLeft:'Keyboard turn left',turnRight:'Keyboard turn right',
-  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4',voice:'Voice chat on / off'
+  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4',voice:'Voice chat on / off',talk:'Talk to bots (hold)'
 };
 function loadKeybinds(){try{const saved=JSON.parse(localStorage.getItem('rot-royale-keybinds')||'{}');return Object.fromEntries(Object.entries(DEFAULT_BINDS).map(([action,code])=>[action,typeof saved[action]==='string'?saved[action]:code]))}catch{return{...DEFAULT_BINDS}}}
 let keybinds=loadKeybinds(),rebindingAction=null;
@@ -612,7 +612,7 @@ function startMatch(){
 }
 function beginMatch(asHost){
   combatHistory.clear();predictedShots.clear();state.netSnapshotTime=state.netRenderTime=undefined;
-  stopEmote(false);resetAirdropState();
+  stopEmote(false);resetAirdropState();resetBotBanter();updateVoiceUi();if(banterOn)setTimeout(()=>botBanterEvent('start'),2500);
   syncBuilds([]);state.buildMode=false;buildCooldowns.clear();
   state.climbing=null;
   state.arsenal={...state.players[state.id]?.arsenal};if(Object.hasOwn(WEAPONS,state.players[state.id]?.weapon))state.selectedWeapon=state.players[state.id].weapon;state.lootNoticeUntil=0;
@@ -647,7 +647,7 @@ function applyHit(shooterId,targetId,damage,headshot=false){
     markEliminated(targetId);target.alive=false;target.respawnAt=Date.now()+3000;target.deaths=(target.deaths||0)+1;shooter.kills=(shooter.kills||0)+1;
     if(shooterId===state.id)state.kills=shooter.kills;if(targetId===state.id)state.deaths=target.deaths;
     const text=headshot?`${shooter.name} headshot ${target.name} ☕`:`${shooter.name} spilled ${target.name}'s coffee`;
-    broadcast({t:'event',text,victim:targetId,killer:shooterId,killed:true,headshot,respawnAt:target.respawnAt});addFeed(text);if(targetId===state.id)takeDamageResult({killed:true,respawnAt:target.respawnAt});
+    broadcast({t:'event',text,victim:targetId,killer:shooterId,killed:true,headshot,respawnAt:target.respawnAt});addFeed(text);botBanterEvent('kill',{killer:shooterId,victim:targetId,headshot});if(targetId===state.id)takeDamageResult({killed:true,respawnAt:target.respawnAt});
     // Snapshots replace player objects. Resolve by stable ID, round and death number instead.
     const roundEnd=state.matchEnd,deathNumber=target.deaths;
     setTimeout(()=>{
@@ -660,7 +660,7 @@ function applyHit(shooterId,targetId,damage,headshot=false){
     },3000);
   }else{
     state.connections.get(targetId)?.send({t:'event',text:'',victim:targetId,killer:shooterId,damage:true,health:target.health});
-    if(targetId===state.id){state.health=target.health;flashDamage()}
+    if(targetId===state.id){state.health=target.health;flashDamage(shooterId)}
   }
   hostSnapshot();
 }
@@ -671,7 +671,7 @@ function takeDamageResult(d){
     if(me)Object.assign(me,{health:0,alive:false,respawnAt:state.respawnAt});
     state.pendingWeapon=state.selectedWeapon;if(me)me.nextWeapon=state.pendingWeapon;renderRespawnLoadout();
     $('respawn').classList.add('active');updateRespawnCountdown();controls.unlock();updateCursor();
-  }else{state.health=d.health??me?.health??state.health;if(me)me.health=state.health;flashDamage()}
+  }else{state.health=d.health??me?.health??state.health;if(me)me.health=state.health;flashDamage(d.killer)}
   updateHud();
 }
 function updateRespawnCountdown(){if(state.matchActive&&!state.alive){const remaining=Math.max(0,state.respawnAt-Date.now());$('respawn-time').textContent=Math.ceil(remaining/1000);$('respawn').style.setProperty('--respawn-progress',`${Math.min(1,remaining/3000)*360}deg`)}}
@@ -692,7 +692,24 @@ function doRespawn(x,z,weapon=state.players[state.id]?.weapon){
   const me=state.players[state.id];if(me)Object.assign(me,{health:100,alive:true,respawnAt:0,weapon:state.selectedWeapon,nextWeapon:state.selectedWeapon,equipped:'gun',x:camera.position.x,y:1.7,z:camera.position.z});
   $('respawn').classList.remove('active');updateWeaponModel();updateHud();updateCursor();if(isPlaying()){focusGame();requestMouseCapture()}
 }
-function flashDamage(){state.openHold=0;$('damage-flash').classList.add('show');setTimeout(()=>$('damage-flash').classList.remove('show'),190)}
+let damageFeedbackSerial=0,nearMissAt=-Infinity,whizzBuffer;
+function flashDamage(attacker){
+  state.openHold=0;const el=$('damage-flash'),p=state.players[attacker];el.classList.add('show');
+const direction=$('incoming-direction');if(direction){direction.classList.toggle('show',!!p);if(p){const angle=Math.atan2(p.x-camera.position.x,-(p.z-camera.position.z))+camera.rotation.y;direction.style.transform=`rotate(${angle}rad)`}}
+  tone(95,.12,.10,'triangle',0,38);const serial=++damageFeedbackSerial;setTimeout(()=>{if(serial!==damageFeedbackSerial)return;el.classList.remove('show');direction?.classList.remove('show')},650);
+}
+function closestBulletPass(origin,end,listener){const delta=end.clone().sub(origin),length=delta.lengthSq();if(length<.01)return null;const t=listener.clone().sub(origin).dot(delta)/length;if(t<=0||t>=1)return null;const point=origin.clone().addScaledVector(delta,t);return {point,distance:point.distanceTo(listener)}}
+function incomingShotAudio(message,start){
+  if(message.id===state.id||!state.matchActive||!state.alive)return;
+  const offset=start.clone().sub(camera.position),distance=offset.length(),right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),pan=distance?offset.dot(right)/distance:0;
+  if(distance<110)weaponSound(message.weapon,message.tier,.95/(1+distance*.045),pan,distance);
+  let nearest=null;for(const end of message.ends.slice(0,12)){if(!Array.isArray(end)||end.length!==3||!end.every(Number.isFinite))continue;const pass=closestBulletPass(start,new THREE.Vector3().fromArray(end),camera.position);if(pass&&(!nearest||pass.distance<nearest.distance))nearest=pass}
+  const now=performance.now();if(!nearest||nearest.distance>2.4||distance<2||now-nearMissAt<110||soundMuted||!audioContext||audioContext.state!=='running')return;nearMissAt=now;
+  // One short noise sweep per shot, not per pellet; reuse the buffer and obey the voice cap.
+  if(!whizzBuffer){whizzBuffer=audioContext.createBuffer(1,Math.ceil(audioContext.sampleRate*.16),audioContext.sampleRate);const data=whizzBuffer.getChannelData(0);for(let i=0;i<data.length;i++){const t=i/data.length;data[i]=(Math.random()*2-1)*Math.sin(Math.PI*t)*Math.exp(-t*2)}}
+  if(soundVoices.size>=24)return;const source=audioContext.createBufferSource(),filter=audioContext.createBiquadFilter(),gain=audioContext.createGain(),stereo=audioContext.createStereoPanner(),t=audioContext.currentTime;
+  source.buffer=whizzBuffer;filter.type='bandpass';filter.Q.value=1.8;filter.frequency.setValueAtTime(3400,t);filter.frequency.exponentialRampToValueAtTime(650,t+.16);gain.gain.value=.16*(1-nearest.distance/3);const side=nearest.point.clone().sub(camera.position).dot(right);stereo.pan.setValueAtTime(clamp(side,-1,1),t);stereo.pan.linearRampToValueAtTime(clamp(side*.45,-1,1),t+.16);source.connect(filter);filter.connect(gain);gain.connect(stereo);stereo.connect(audioMaster);soundVoices.add(source);source.onended=()=>{soundVoices.delete(source);source.disconnect();filter.disconnect();gain.disconnect();stereo.disconnect()};source.start();
+}
 
 function shoot(){
   stopEmote();
@@ -773,7 +790,7 @@ function showTracers(message){
   const muzzle=weaponModel?.userData.rig?.userData.gun?.userData.muzzle;
   if(message.id===state.id&&muzzle){camera.updateMatrixWorld(true);muzzle.getWorldPosition(start)}
   for(const end of message.ends.slice(0,12)){if(!valid(end))continue;const slot=tracerSlots[tracerCursor++%tracerSlots.length];slot.start.copy(start);slot.end.fromArray(end);const look=(WEAPON_FEEL[message.weapon]||WEAPON_FEEL.ar).tracer;slot.born=performance.now();slot.life=look[2];slot.width=look[1];tracerMesh.setColorAt((tracerCursor-1)%tracerSlots.length,new THREE.Color(message.tier?RARITIES[message.tier]?.color||0x66ddff:look[0]))}
-  if(tracerMesh.instanceColor)tracerMesh.instanceColor.needsUpdate=true;remoteShotTimes.set(message.id,performance.now());if(message.id!==state.id){const offset=start.clone().sub(camera.position),distance=offset.length(),right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),pan=distance?offset.dot(right)/distance:0;if(distance<85)weaponSound(message.weapon,message.tier,.65/(1+distance*.07),pan,distance)}for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});tracerMesh.visible=true;updateTracers(performance.now());
+  if(tracerMesh.instanceColor)tracerMesh.instanceColor.needsUpdate=true;remoteShotTimes.set(message.id,performance.now());incomingShotAudio(message,start);for(const point of (message.impacts||[]).slice(0,4))showImpact({...point,spark:true});tracerMesh.visible=true;updateTracers(performance.now());
 }
 function updateTracers(now){
   if(!tracerMesh?.visible)return;let active=false;
@@ -1470,7 +1487,7 @@ function startLocalAirdrop(pub){
   drop.crate=createSupplyCrate();drop.chute=createParachute();drop.crate.add(drop.chute);drop.chute.position.y=.9;drop.chute.visible=false;drop.crate.visible=false;world.add(drop.crate);
   drop.beacon=createBeacon();drop.beacon.position.set(drop.x,drop.y,drop.z);drop.beacon.visible=false;world.add(drop.beacon);
   if(since<6000){drop.plane=createDinoPlane();world.add(drop.plane)}
-  if(since<AIRDROP.BANNER){$('airdrop-banner').classList.add('show');drop.bannerUntil=now+AIRDROP.BANNER-since;addFeed('Airdrop inbound!')}
+  if(since<AIRDROP.BANNER){$('airdrop-banner').classList.add('show');drop.bannerUntil=now+AIRDROP.BANNER-since;addFeed('Airdrop inbound!');botBanterEvent('airdrop')}
   if(since<1500)airdropSiren();
   if(airdropFrozen(now))freezeForCinematic();
 }
@@ -1490,7 +1507,7 @@ function landDrop(){
 function openDropLocal(pub){
   drop.openedBy=pub.openedBy;drop.openedName=pub.openedName||'Someone';drop.item=pub.item;drop.openedAt=performance.now();drop.beacon.visible=false;
   const top=new THREE.Vector3(drop.x,drop.y+1.1,drop.z);if(drop.landed){spawnBlast('confetti',top,1);spawnBlast('rocket',top,.25)}
-  addFeed(`${drop.openedName} looted ${SPECIAL_LABELS[drop.item]||'the airdrop'}!`);
+  addFeed(`${drop.openedName} looted ${SPECIAL_LABELS[drop.item]||'the airdrop'}!`);if(pub.openedBy===state.id)botBanterEvent('player_looted');
   const d=top.distanceTo(camera.position),v=1/(1+d*.04);tone(523,.12,.05*v,'triangle');tone(784,.14,.045*v,'triangle',.09);tone(1047,.2,.04*v,'sine',.18);
   $('airdrop-marker').classList.remove('show');$('airdrop-hold').classList.remove('show','near');state.openHold=0;
 }
@@ -1742,6 +1759,7 @@ const VOICE_BUTTONS=['voice-hud','voice-lobby','voice-pause'],voiceSample=new Ui
 
 function voiceAvailable(){return !!state.peer&&!state.practice&&!!navigator.mediaDevices?.getUserMedia}
 async function toggleVoice(){
+  if(state.practice){toggleBotBanter();return}
   if(state.voiceOn){stopVoice();toast('Voice off');return}
   if(voiceStarting)return;
   if(!voiceAvailable()){toast(state.practice||!state.peer?'Voice chat needs an online room':"Voice chat isn't available in this browser");return}
@@ -1831,26 +1849,125 @@ function updateVoice(now){
 function updateVoiceTags(){
   const root=$('voice-tags'),seen=new Set();
   if(state.matchActive&&isPlaying()&&!airdropCinematicActive())for(const p of Object.values(state.players)){
-    if(p.id===state.id||!p.voice||p.alive===false)continue;const mesh=playerMeshes.get(p.id);if(!mesh?.visible)continue;
+    if(p.id===state.id||!(p.voice||(p.bot&&banterOn))||p.alive===false)continue;const mesh=playerMeshes.get(p.id);if(!mesh?.visible)continue;
     _voicePos.set(mesh.position.x,mesh.position.y+2.45,mesh.position.z);const distance=_voicePos.distanceTo(camera.position);if(distance>VOICE.tagRange)continue;
     const s=_voicePos.clone().project(camera);if(s.z>1||Math.abs(s.x)>1.05||Math.abs(s.y)>1.05)continue;
     let tag=voiceTags.get(p.id);if(!tag){tag=document.createElement('div');tag.className='voice-tag';root.appendChild(tag);voiceTags.set(p.id,tag)}
-    const entry=voicePeers.get(p.id),label=`${entry?.connected?'🔊':'🔇'} ${p.name||'Player'}`;if(tag.textContent!==label)tag.textContent=label;
+    const entry=voicePeers.get(p.id)||(p.bot?botTalk.get(p.id):null),label=`${entry?.connected||p.bot?'🔊':'🔇'} ${p.name||'Player'}`;if(tag.textContent!==label)tag.textContent=label;
     tag.classList.toggle('talking',!!entry&&entry.level>VOICE.talkLevel&&distance<VOICE.maxDistance);tag.classList.toggle('far',distance>=VOICE.maxDistance);
     tag.style.transform=`translate(${((s.x*.5+.5)*innerWidth).toFixed(1)}px,${((-s.y*.5+.5)*innerHeight).toFixed(1)}px) translate(-50%,-100%)`;seen.add(p.id);
   }
   for(const [id,tag] of voiceTags)if(!seen.has(id)){tag.remove();voiceTags.delete(id)}
 }
 function updateVoiceUi(){
-  const on=!!state.voiceOn,key=keyName(keybinds.voice);
-  for(const id of VOICE_BUTTONS){const b=$(id);b.classList.toggle('on',on);b.setAttribute?.('aria-pressed',String(on));b.textContent=voiceStarting?'🎙 CONNECTING…':on?`🎙 VOICE ON · ${key}`:`🎙 VOICE OFF · ${key}`}
+  const bots=state.practice&&!!BOT_VOICE_ENDPOINT,on=bots?banterOn:!!state.voiceOn,key=keyName(keybinds.voice);
+  for(const id of VOICE_BUTTONS){const b=$(id);b.classList.toggle('on',on);b.setAttribute?.('aria-pressed',String(on));b.textContent=voiceStarting?'🎙 CONNECTING…':bots?`🎙 BOT TALK ${on?'ON':'OFF'} · ${key}`:on?`🎙 VOICE ON · ${key}`:`🎙 VOICE OFF · ${key}`}
 }
 
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}if(state.mode==='results'){renderResults(now);updateVoice(now);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}if(state.map==='factory')updateFactoryEffects();updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateAirdrop(dt,now);updateVoice(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
+// ---------- Practice bot trash talk (Groq + xAI voice via the bot-voice proxy) ----------
+// Off unless index.html names a proxy in <meta name="bot-voice-endpoint">. Practice only; V opts in, hold G to talk back.
+const BANTER={globalGap:3500,botGap:7000,maxLinesPerMatch:30,maxRepliesPerMatch:15,minClip:350,maxClip:9000,tauntQuiet:22000,subtitleMs:4200,refDistance:4,maxDistance:45};
+const BOT_VOICE_ENDPOINT=String(document.querySelector?.('meta[name="bot-voice-endpoint"]')?.content||'').trim().replace(/\/$/,'');
+const botTalk=new Map(),banterHistory=[];
+let banterOn=false,banterBusy=false,banterLastAt=-Infinity,banterLines=0,banterReplies=0,banterDisabled=false,banterMic=null,banterRecorder=null,banterClipAt=0,banterNextTaunt=0,banterSubtitleUntil=0;
+
+function banterAvailable(){return !!BOT_VOICE_ENDPOINT&&state.practice&&state.map!=='surf'&&!banterDisabled}
+function toggleBotBanter(){
+  if(!BOT_VOICE_ENDPOINT||state.map==='surf'){toast('Voice chat needs an online room');return}
+  if(banterDisabled){toast('Bot trash talk is out of juice for today');return}
+  banterOn=!banterOn;unlockAudio();updateVoiceUi();
+  toast(banterOn?`Bot trash talk on · hold ${keyName(keybinds.talk)} to talk back`:'Bot trash talk off');
+  if(banterOn&&state.matchActive){banterNextTaunt=performance.now()+6000;botBanterEvent('start')}
+  if(!banterOn)stopBotSpeech();
+}
+function resetBotBanter(){banterLines=banterReplies=0;banterHistory.length=0;banterLastAt=-Infinity;banterNextTaunt=performance.now()+BANTER.tauntQuiet;botTalk.forEach(t=>t.lastAt=-Infinity);stopBotSpeech()}
+function botIndex(id){return Math.max(0,+String(id).replace(/\D/g,'')||0)}
+function nearestBot(maxDistance=Infinity){
+  let best=null,bestD=maxDistance;for(const p of Object.values(state.players)){if(!p.bot||p.alive===false)continue;const d=Math.hypot((p.x||0)-camera.position.x,(p.z||0)-camera.position.z);if(d<bestD){best=p;bestD=d}}return best;
+}
+// Game moments that make a bot speak. Each bot has a cooldown and the whole match has a line budget.
+function botBanterEvent(type,data={}){
+  if(!banterOn||!banterAvailable()||!state.matchActive)return;
+  let bot=null,event=type;
+  if(type==='kill'){
+    const killer=state.players[data.killer],victim=state.players[data.victim];
+    if(killer?.bot&&data.victim===state.id){bot=killer;event='bot_killed_player'}
+    else if(victim?.bot&&data.killer===state.id){bot=victim;event='player_killed_bot'}
+    else if(killer?.bot&&victim?.bot&&Math.random()<.35){bot=killer;event='bot_killed_bot'}
+  }else if(type==='taunt')bot=nearestBot(35);
+  else bot=nearestBot();
+  if(!bot)return;requestBotLine(bot,event,{headshot:!!data.headshot});
+}
+function banterContext(bot,event,extra={}){
+  const me=state.players[state.id]||{},remaining=Math.max(0,Math.round((state.matchEnd-Date.now())/1000));
+  return{event,bot:botIndex(bot.id),player:safeName(),botKills:bot.kills||0,botDeaths:bot.deaths||0,playerKills:me.kills??state.kills,playerDeaths:me.deaths??state.deaths,playerHealth:Math.round(state.health),
+    playerWeapon:gunStats().name,botWeapon:weaponStats(bot.weapon,bot.arsenal||{}).name,distance:Math.round(Math.hypot((bot.x||0)-camera.position.x,(bot.z||0)-camera.position.z)),timeLeft:Number.isFinite(remaining)?remaining:0,history:banterHistory.slice(-6),...extra};
+}
+async function requestBotLine(bot,event,extra={},audio=null){
+  const now=performance.now(),talk=botTalk.get(bot.id)||{lastAt:-Infinity,level:0};botTalk.set(bot.id,talk);
+  const reply=event==='reply';
+  if(banterBusy||(!reply&&(now-banterLastAt<BANTER.globalGap||now-talk.lastAt<BANTER.botGap||banterLines>=BANTER.maxLinesPerMatch)))return;
+  banterBusy=true;banterLastAt=talk.lastAt=now;banterLines++;banterNextTaunt=now+BANTER.tauntQuiet;
+  try{
+    const form=new FormData();form.append('context',JSON.stringify(banterContext(bot,event,extra)));if(audio)form.append('audio',audio,'clip.webm');
+    const r=await fetch(`${BOT_VOICE_ENDPOINT}/talk`,{method:'POST',body:form});
+    if(r.status===429){banterDisabled=true;banterOn=false;updateVoiceUi();toast('Bot trash talk hit today\'s limit');return}
+    if(r.status===204||!r.ok)return;
+    const line=decodeURIComponent(r.headers.get('X-Line')||''),heard=decodeURIComponent(r.headers.get('X-Heard')||''),mp3=await r.arrayBuffer();
+    if(heard)banterHistory.push({speaker:'player',text:heard});if(line)banterHistory.push({speaker:'bot',text:line});while(banterHistory.length>12)banterHistory.shift();
+    if(!banterOn||!state.matchActive||!state.players[bot.id])return;
+    await playBotLine(bot,line,mp3,heard);
+  }catch{}finally{banterBusy=false}
+}
+async function playBotLine(bot,line,mp3,heard){
+  unlockAudio();if(!audioContext)return;
+  const buffer=await audioContext.decodeAudioData(mp3.slice(0));stopBotSpeech(bot.id);
+  const source=audioContext.createBufferSource(),filter=audioContext.createBiquadFilter(),panner=audioContext.createPanner(),analyser=audioContext.createAnalyser(),gain=audioContext.createGain();
+  source.buffer=buffer;filter.type='lowpass';filter.frequency.value=20000;analyser.fftSize=512;gain.gain.value=1.25;
+  Object.assign(panner,{panningModel:'HRTF',distanceModel:'linear',refDistance:BANTER.refDistance,maxDistance:BANTER.maxDistance,rolloffFactor:1});
+  source.connect(analyser);source.connect(filter);filter.connect(panner);panner.connect(gain);gain.connect(audioContext.destination);
+  const talk=botTalk.get(bot.id);Object.assign(talk,{source,filter,panner,analyser,gain,playing:true,connected:true});
+  source.onended=()=>{if(talk.source===source){talk.playing=false;talk.level=0;for(const n of [source,filter,panner,analyser,gain])try{n.disconnect()}catch{}}};
+  positionBotVoice(bot.id,talk);source.start();
+  showBotSubtitle(heard?`You: ${heard}`:'',`${bot.name}: ${line}`);
+}
+function stopBotSpeech(id){for(const [botId,t] of botTalk){if(id&&botId!==id)continue;if(t.playing)try{t.source.stop()}catch{}t.playing=false;t.level=0}}
+function positionBotVoice(id,talk){
+  const p=state.players[id],mesh=playerMeshes.get(id);if(!p||!talk.panner)return;
+  if(mesh)_voicePos.set(mesh.position.x,mesh.position.y+1.55,mesh.position.z);else _voicePos.set(p.x||0,p.y??1.7,p.z||0);
+  setAudioPosition(talk.panner,_voicePos,audioContext.currentTime);
+  const blocked=_voicePos.distanceTo(camera.position)>1&&!hasClearShot(camera.position,_voicePos.clone());talk.filter.frequency.setTargetAtTime(blocked?850:20000,audioContext.currentTime,.08);
+}
+function showBotSubtitle(first,second){const el=$('bot-subtitle');el.textContent=[first,second].filter(Boolean).join('\n');el.classList.add('show');banterSubtitleUntil=performance.now()+BANTER.subtitleMs}
+// Push-to-talk: record while G is held, then send the clip to the bot you are closest to.
+async function startBotTalk(){
+  if(!banterOn||!banterAvailable()||!isPlaying()||banterRecorder||banterReplies>=BANTER.maxRepliesPerMatch)return;
+  if(typeof MediaRecorder==='undefined'){toast("This browser can't record voice");return}
+  try{banterMic??=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false})}catch{toast('Microphone blocked · allow mic access to talk to bots');return}
+  if(!state.keys.KeyG)return;
+  const type=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isTypeSupported?.(t))||'',chunks=[];
+  const recorder=new MediaRecorder(banterMic,type?{mimeType:type}:undefined);banterRecorder=recorder;banterClipAt=performance.now();
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  recorder.onstop=()=>{const length=performance.now()-banterClipAt;banterRecorder=null;$('bot-talk').classList.remove('show');
+    if(length<BANTER.minClip||!chunks.length)return;const bot=nearestBot();if(!bot)return;banterReplies++;showBotSubtitle('',`${bot.name} is thinking…`);
+    requestBotLine(bot,'reply',{},new Blob(chunks,{type:recorder.mimeType||'audio/webm'}))};
+  recorder.start();$('bot-talk').textContent=`🎙 TALKING TO ${(nearestBot()?.name||'BOTS').toUpperCase()}…`;$('bot-talk').classList.add('show');
+  setTimeout(()=>{if(banterRecorder===recorder)recorder.stop()},BANTER.maxClip);
+}
+function stopBotTalk(){if(banterRecorder&&banterRecorder.state!=='inactive')banterRecorder.stop()}
+function updateBotVoice(now){
+  if(banterSubtitleUntil&&now>=banterSubtitleUntil){$('bot-subtitle').classList.remove('show');banterSubtitleUntil=0}
+  if(!banterOn||!audioContext)return;
+  let speaking=false;for(const [id,t] of botTalk){if(!t.playing)continue;speaking=true;positionBotVoice(id,t);t.level=t.level*.7+voiceLevel(t.analyser)*.3}
+  if(speaking&&!(state.voiceOn&&voicePeers.size)){const L=audioContext.listener,t=audioContext.currentTime;camera.getWorldDirection(_voiceDir);setAudioPosition(L,camera.position,t);if(L.forwardX){L.forwardX.setTargetAtTime(_voiceDir.x,t,.04);L.forwardY.setTargetAtTime(_voiceDir.y,t,.04);L.forwardZ.setTargetAtTime(_voiceDir.z,t,.04);L.upX.value=0;L.upY.value=1;L.upZ.value=0}else L.setOrientation(_voiceDir.x,_voiceDir.y,_voiceDir.z,0,1,0)}
+  if(state.matchActive&&isPlaying()&&now>=banterNextTaunt&&!banterBusy){banterNextTaunt=now+BANTER.tauntQuiet;const bot=nearestBot(35);if(bot&&hasClearShot(camera.position,new THREE.Vector3(bot.x,(bot.y??1.7)-.3,bot.z)))botBanterEvent('taunt')}
+}
+
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),now=performance.now();updateCursor();if(state.mode==='home'&&lobbyRenderer){updateLobbyLook(dt);lobbyRenderer.render(lobbyScene,lobbyCamera);return}if(state.mode==='results'){renderResults(now);updateVoice(now);return}updateAim(dt);if(state.matchActive){advanceMovement(dt);updateBots(dt);if(state.host){const me=state.players[state.id];if(me)Object.assign(me,{x:camera.position.x,y:camera.position.y,z:camera.position.z})}updatePickups(now);updateNetwork(now);updateTimer();syncMeshes(dt);updateHud()}if(state.map==='factory')updateFactoryEffects();updateWeaponMotion(dt,now);updateAimRecoil(dt,now);updateAutomaticFire();updateCombatVisuals(now);updateImpacts(now);updateAirdrop(dt,now);updateVoice(now);updateBotVoice(now);updateRespawnCountdown();updateBuilding();updateFeel(dt,now);renderGameplay(now)}
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function leaveToHome(message=''){state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
+function leaveToHome(message=''){banterOn=false;stopBotSpeech();stopBotTalk();queueMicrotask(updateVoiceUi);state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
 function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.jumpQueued=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
@@ -1903,8 +2020,8 @@ addEventListener('keydown',e=>{
   e.preventDefault();e.stopImmediatePropagation();
   if(!e.repeat)toggleVoice();
 },true);
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','KeyV','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(e.code==='KeyV'&&!e.repeat){toggleVoice();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
-addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','KeyV','KeyG','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(e.code==='KeyV'&&!e.repeat){toggleVoice();return}if(e.code==='KeyG'&&!e.repeat){startBotTalk();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('blur',clearInput);addEventListener('blur',stopBotTalk);addEventListener('keyup',e=>{if(e.code==='KeyG')stopBotTalk()});document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
 addEventListener('keydown',e=>{if(isPlaying()&&state.map==='surf'&&e.code==='KeyR'&&!e.repeat){e.preventDefault();resetSurfRun(true)}});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(!controls.isLocked)requestMouseCapture();if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});
 $('capture-mouse').onclick=requestMouseCapture;

@@ -160,3 +160,9 @@ input{border:2px solid var(--ink);border-radius:0;background:white;padding:10px 
 .voice-tag{position:absolute;left:0;top:0;padding:2px 7px;border-radius:10px;background:#0e2536b3;color:#cfe3ee;font:700 10px "DM Sans",sans-serif;letter-spacing:.04em;white-space:nowrap;transition:background .12s,box-shadow .12s}
 .voice-tag.talking{background:#1d7a45e6;color:#fff;box-shadow:0 0 10px #72ef9caa}
 .voice-tag.far{opacity:.45}
+
+/* Practice bot trash talk */
+.bot-subtitle{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);max-width:min(640px,80vw);padding:7px 14px;border-radius:4px;background:#0b1a24d9;color:#fff;font:600 14px/1.35 "DM Sans",sans-serif;text-align:center;white-space:pre-line;opacity:0;transition:opacity .2s;text-shadow:none}
+.bot-subtitle.show{opacity:1}
+.bot-talk{position:absolute;left:50%;bottom:196px;transform:translateX(-50%);display:none;padding:5px 12px;border-radius:12px;background:#1d7a45e6;color:#fff;font:700 11px "DM Sans",sans-serif;letter-spacing:.08em;box-shadow:0 0 12px #72ef9c88}
+.bot-talk.show{display:block}

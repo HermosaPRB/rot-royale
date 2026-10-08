@@ -1,0 +1,23 @@
+# Bot trash-talk proxy. Not deployed yet.
+# Deploy later with:  npx wrangler secret put GROQ_API_KEY
+#                     npx wrangler secret put XAI_API_KEY
+#                     npx wrangler deploy
+# Local test:         copy .dev.vars.example to .dev.vars, add keys, then  npx wrangler dev
+name = "rot-royale-bot-voice"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Sites allowed to call this proxy (add your GitHub Pages / Codex URL before deploying).
+ALLOWED_ORIGINS = "http://localhost:8765,http://127.0.0.1:8765"
+DAILY_LINES_PER_IP = "80"
+DAILY_LINES_TOTAL = "3000"
+GROQ_CHAT_MODEL = "llama-3.3-70b-versatile"
+GROQ_STT_MODEL = "whisper-large-v3-turbo"
+
+# Daily caps only persist with a KV namespace. Create one with
+#   npx wrangler kv namespace create QUOTA
+# then uncomment and paste its id:
+# [[kv_namespaces]]
+# binding = "QUOTA"
+# id = "PASTE_ID_HERE"

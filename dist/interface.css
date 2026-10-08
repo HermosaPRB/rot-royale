@@ -187,3 +187,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 @keyframes podium-reveal{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @media(max-width:600px){#results .results-card{padding:20px 0}.podium-player strong{font-size:.9rem}#podium{gap:5px}.podium-player>span:last-child{font-size:.75rem}#respawn .respawn-card{padding:20px}.respawn-clock{margin:12px auto}}
 @media(prefers-reduced-motion:reduce){.podium-player{animation:none}}
+/* Incoming-fire cues: amber/coffee impact rather than blood. */
+#damage-flash{pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,#bb662b55 75%,#ffb04cb0 100%);transition:opacity .25s ease-out}
+#incoming-direction{position:absolute;left:50%;top:50%;width:180px;height:180px;margin:-90px;transform:rotate(var(--incoming-angle,0rad));opacity:0;pointer-events:none;transition:opacity .2s}
+#incoming-direction.show{opacity:1}
+#incoming-direction span{position:absolute;left:50%;top:0;transform:translateX(-50%);color:#ffcb70;font:900 28px/1 sans-serif;text-shadow:0 2px 3px #29180e,0 0 8px #e78a30}

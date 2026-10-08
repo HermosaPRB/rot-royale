@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import * as THREE from '../../work/three.module.js';
+const src=fs.readFileSync(new URL('../dist/game.js',import.meta.url),'utf8');
+const ctx=vm.createContext({THREE});vm.runInContext(src.slice(src.indexOf('function closestBulletPass('),src.indexOf('function incomingShotAudio(')),ctx);
+const pass=(a,b,p)=>ctx.closestBulletPass(new THREE.Vector3(...a),new THREE.Vector3(...b),new THREE.Vector3(...p));
+assert.equal(pass([0,0,0],[0,0,-10],[1,0,-5]).distance,1);
+assert.equal(pass([0,0,0],[0,0,-3],[0,0,-5]),null,'bullets stopped by cover cannot whizz beyond endpoint');
+assert.equal(pass([0,0,0],[0,0,-10],[0,0,1]),null,'no whizz behind the shooter');
+assert.equal(pass([0,0,0],[0,0,0],[0,0,0]),null);
+console.log('PASS incoming-fire segment geometry: close passes, cover endpoints, behind-shooter and zero-length rejection.');
