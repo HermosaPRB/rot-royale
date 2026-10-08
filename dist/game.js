@@ -21,14 +21,14 @@ const DEFAULT_BINDS={
   forward:'KeyW',back:'KeyS',left:'KeyA',right:'KeyD',jump:'Space',aim:'ShiftLeft',
   melee:'KeyF',reload:'KeyR',emote:'KeyE',build:'KeyB',buildType:'KeyT',inspect:'KeyI',
   slide:'ControlLeft',sound:'KeyM',capture:'KeyL',turnLeft:'ArrowLeft',turnRight:'ArrowRight',
-  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4',voice:'KeyV',talk:'KeyG'
+  loadout1:'Digit1',loadout2:'Digit2',loadout3:'Digit3',loadout4:'Digit4',voice:'KeyV',talk:'KeyG',airdropWeapon:'KeyQ'
 };
 const BIND_LABELS={
   forward:'Move forward',back:'Move backward',left:'Move left',right:'Move right',jump:'Jump / bunny hop',
   aim:'Aim',melee:'Gun / bat',reload:'Reload / rotate build',emote:'Emote / interact',build:'Build mode',
   buildType:'Change build piece',inspect:'Inspect weapon',slide:'Slide',sound:'Toggle sound',
   capture:'Capture mouse',turnLeft:'Keyboard turn left',turnRight:'Keyboard turn right',
-  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4',voice:'Voice chat on / off',talk:'Talk to bots (hold)'
+  loadout1:'Death loadout 1',loadout2:'Death loadout 2',loadout3:'Death loadout 3',loadout4:'Death loadout 4',voice:'Voice chat on / off',talk:'Talk to bots (hold)',airdropWeapon:'Normal / airdrop gun'
 };
 function loadKeybinds(){try{const saved=JSON.parse(localStorage.getItem('rot-royale-keybinds')||'{}');return Object.fromEntries(Object.entries(DEFAULT_BINDS).map(([action,code])=>[action,typeof saved[action]==='string'?saved[action]:code]))}catch{return{...DEFAULT_BINDS}}}
 let keybinds=loadKeybinds(),rebindingAction=null;
@@ -289,7 +289,7 @@ function resetPickups(){caseWaits.clear();state.pickups=MAPS[state.map].pickups.
 function applyLootAward(d){
   if(!state.matchActive||!Object.hasOwn(WEAPONS,d.weapon))return;
   stopEmote();
-  state.arsenal={...d.arsenal};state.selectedWeapon=d.weapon;state.pendingWeapon=d.weapon;state.equipped='gun';state.reloading=false;state.fireHeld=false;resetAim();state.ammo=WEAPONS[d.weapon].mag;
+state.arsenal={...d.arsenal};state.selectedWeapon=d.weapon;state.pendingWeapon=d.weapon;state.equipped='gun';state.reloading=false;state.fireHeld=false;resetAim();state.normalGunAmmo=WEAPONS[d.weapon].mag;if(!state.special)state.ammo=state.normalGunAmmo;
   const me=state.players[state.id];if(me)Object.assign(me,{weapon:d.weapon,nextWeapon:d.weapon,arsenal:{...state.arsenal},equipped:'gun'});
   updateWeaponModel();updateHud();const w=weaponStats(d.weapon),r=RARITIES[w.tier];
   $('loot-notice').textContent=`${r.name} UNLOCK · ${w.name} · +${Math.round((r.damage-1)*100)}% damage`;$('loot-notice').style.color='#'+r.color.toString(16).padStart(6,'0');state.lootNoticeUntil=performance.now()+4200;
@@ -542,7 +542,7 @@ function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
   if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
   if(d.t==='build')placeBuild(from,d);
-  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.steady=clamp(+d.steady||0,0,1);p.special=specialOwners.get(from)?.type||null;p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,64);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun';p.aiming=!!d.aiming;p.grounded=d.grounded!==false;p.reloading=!!d.reloading;p.sliding=!!d.sliding;if(openHolds.has(from)&&!playerNearDrop(p,.3))openHolds.delete(from)}
+  if(d.t==='state'&&state.players[from]){const p=state.players[from];p.steady=clamp(+d.steady||0,0,1);p.special=specialOwners.get(from)?.stowed?null:specialOwners.get(from)?.type||null;p.x=clamp(d.x,-34,34);p.z=clamp(d.z,-35,35);p.y=clamp(d.y??1.7,1.7,64);p.yaw=Number.isFinite(d.yaw)?d.yaw:0;p.pitch=clamp(d.pitch??0,-1.45,1.45);p.equipped=d.equipped==='bat'?'bat':'gun';p.aiming=!!d.aiming;p.grounded=d.grounded!==false;p.reloading=!!d.reloading;p.sliding=!!d.sliding;if(openHolds.has(from)&&!playerNearDrop(p,.3))openHolds.delete(from)}
   if(d.t==='shot'){openHolds.delete(from);if(d.pose&&typeof d.pose==='object')handleHostMessage({...d.pose,t:'state'},from);resolveShot(from,performance.now(),d)}
   if(d.t==='loadout'&&state.matchActive&&state.players[from]?.alive===false&&Object.hasOwn(WEAPONS,d.weapon))state.players[from].nextWeapon=d.weapon;
   if(d.t==='melee'){openHolds.delete(from);resolveMelee(from)}
@@ -551,6 +551,7 @@ function handleHostMessage(d,from){
   if(d.t==='openDrop')hostOpenDrop(from);
   if(d.t==='specialFire'){openHolds.delete(from);hostSpecialFire(from)}
   if(d.t==='specialReload')hostSpecialReload(from);
+  if(d.t==='specialEquip'){const rec=specialOwners.get(from),p=state.players[from];if(rec&&p?.alive&&state.matchActive){rec.stowed=d.active!==true;rec.switchUntil=performance.now()+300;p.special=rec.stowed?null:rec.type}}
   if(d.t==='ready')updateLobby();
   if(d.t==='voice'&&state.players[from]){state.players[from].voice=!!d.on;hostSnapshot();if(state.mode==='lobby')updateLobby()}
 }
@@ -685,7 +686,7 @@ function chooseRespawnWeapon(weapon){
 }
 function doRespawn(x,z,weapon=state.players[state.id]?.weapon){
   if(!state.matchActive)return;state.specialCharge=0;if(Object.hasOwn(WEAPONS,weapon))state.selectedWeapon=weapon;state.pendingWeapon=state.selectedWeapon;state.equipped='gun';
-  state.alive=true;state.health=100;state.respawnAt=0;state.reloading=false;state.ammo=state.special?SPECIALS[state.special.type].mag:WEAPONS[state.selectedWeapon].mag;
+  state.alive=true;state.health=100;state.respawnAt=0;state.reloading=false;state.ammo=state.special?SPECIALS[state.special.type].mag:WEAPONS[state.selectedWeapon].mag;state.normalGunAmmo=WEAPONS[state.selectedWeapon].mag;if(state.stowedSpecial)state.stowedSpecial.ammo=SPECIALS[state.stowedSpecial.type].mag;
   if(state.host)refillSpecialOnRespawn(state.id);
   camera.position.set(x??0,1.7,z??12);state.velocityY=0;state.onGround=true;clearInput();
   // Update both stores before HUD/snapshot reads can put the old zero health back.
@@ -736,6 +737,7 @@ function updateAutomaticFire(){if(state.fireHeld&&!state.special&&WEAPONS[state.
 function publishCombatPose(){const p=myPublic();if(state.host)state.players[state.id]=p;else sendHost({t:'state',x:p.x,y:p.y,z:p.z,yaw:p.yaw,pitch:p.pitch,equipped:p.equipped,aiming:p.aiming,grounded:p.grounded,reloading:p.reloading,sliding:p.sliding,steady:p.steady})}
 // The host raycasts the actual character geometry, including its own player, and decides damage.
 function resolveShot(id,now=performance.now(),shot={}){
+  const specialRecord=specialOwners.get(id);if(specialRecord&&(!specialRecord.stowed||now<(specialRecord.switchUntil||0)))return;
   if(airdropFrozen(now))return;
   const attacker=state.players[id],w=Object.hasOwn(WEAPONS,attacker?.weapon)?weaponStats(attacker.weapon,attacker.arsenal||{}):null;
   const last=shotCooldowns.get(id)??-Infinity,tolerance=id!==state.id&&!attacker?.bot?Math.min(45,(w?.rate||0)*.4):0;
@@ -876,7 +878,7 @@ function updateCombatVisuals(now){
   if(state.map==='surf')$('weapon-name').textContent=`SURF · STAGE ${state.surfCheckpoint+1}/4`;
   else if(!swing&&!state.reloading&&!switching)$('weapon-name').textContent=holding?meleeLabel():gunStats().name.toUpperCase();
   else if(switching)$('weapon-name').textContent=(state.switchPending==='bat'?meleeLabel():gunStats().name.toUpperCase())+'…';
-  $('melee-status').textContent=state.map==='surf'?'A / D + MOUSE · TAP JUMP · R RESTART':switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;
+  $('melee-status').textContent=state.map==='surf'?'A / D + MOUSE · TAP JUMP · R RESTART':switching?'':holding?(now-state.lastMelee<MELEE.cooldown?'RECOVERING · F GUN':'CLICK SWING · F GUN'):`F · EQUIP ${meleeLabel()}`;if(state.special||state.stowedSpecial)$('melee-status').textContent+=` · ${keyName(keybinds.airdropWeapon)} NORMAL / AIRDROP`;
 }
 function toggleBat(){
   const now=performance.now();
@@ -1440,12 +1442,12 @@ function spawnFor(i){const pts=MAPS[state.map].spawns,p=pts[i%pts.length];return
 // Host decides timing, loot and every hit. Clients only render the shared `drop` and ask to open or fire.
 const AIRDROP={BROLL:4000,RELEASE:1400,CHUTE:1700,LAND:10000,ALT:27,PLANE_SPEED:38,OPEN_RANGE:2.2,OPEN_HOLD:1500,MIN_DELAY:45000,MAX_DELAY:75000,BANNER:4500};
 const SPECIALS={
-  rpg:{name:'Raptor RPG',mag:1,reserve:Infinity,reload:2600,rate:500,spread:.004,range:80,color:0x56613a,move:.9,tier:0,speed:45,kind:'rocket'},
-  toilet:{name:'Skibidi Toilet Gun',mag:5,reserve:Infinity,reload:2300,rate:650,spread:.004,range:60,color:0xefebe3,move:.95,tier:0,speed:40,kind:'orb'}
+  rpg:{name:'Raptor RPG',mag:1,reserve:Infinity,reload:1250,rate:500,spread:.004,range:100,color:0x56613a,move:1,tier:0,speed:75,kind:'rocket'},
+  toilet:{name:'Skibidi Toilet Gun',mag:5,reserve:Infinity,reload:1400,rate:400,spread:.004,range:85,color:0xefebe3,move:1,tier:0,speed:65,kind:'orb'}
 };
 const SPECIAL_LABELS={rpg:'the RPG',toilet:'the Skibidi Toilet Gun'};
-const ROCKET={radius:4.5,max:120,min:25,self:.5,buildRadius:2.2};
-const VORTEX={radius:3.5,duration:1500,tick:250,tickDamage:5,popRadius:2.5,popDamage:50,direct:45,pull:20,charge:200};
+const ROCKET={radius:6.5,max:240,min:45,self:.22,buildRadius:4};
+const VORTEX={radius:5.5,duration:1500,tick:250,tickDamage:12,popRadius:4.5,popDamage:100,direct:100,pull:32,charge:80};
 let airdropPlan=null,drop=null,brollCamera=null,projectileSerial=0,vortexSerial=0,puffGeometry=null;
 const specialOwners=new Map(),openHolds=new Map(),projectiles=[],vortices=[],blasts=[],smokePuffs=[];
 const _dropA=new THREE.Vector3(),_dropB=new THREE.Vector3();
@@ -1597,10 +1599,18 @@ function updateAirdrop(dt,now){
 // the chosen standard preset remains the fallback and stays on the respawn menu.
 function grantSpecial(type){
   const spec=SPECIALS[type];if(!spec||!state.matchActive)return;stopEmote();
+  state.normalGunAmmo=state.special?state.normalGunAmmo:state.ammo;state.stowedSpecial=null;
   state.special={type,reserve:Infinity};state.ammo=spec.mag;state.reloading=false;state.specialCharge=0;state.switchPending=null;state.equipped='gun';state.fireHeld=false;resetAim();
   updateWeaponModel();updateHud();publishCombatPose();
-  $('loot-notice').textContent=`AIRDROP · ${spec.name.toUpperCase()} · YOURS THIS MATCH`;$('loot-notice').style.color='#ff9a3c';state.lootNoticeUntil=performance.now()+4200;
+  $('loot-notice').textContent=`${spec.name.toUpperCase()} · ${keyName(keybinds.airdropWeapon)} SWITCH NORMAL / AIRDROP`;$('loot-notice').style.color='#ff9a3c';state.lootNoticeUntil=performance.now()+4200;
   tone(660,.12,.05,'triangle');tone(990,.16,.045,'triangle',.1);
+}
+function toggleAirdropWeapon(){
+  if(!isPlaying()||airdropFrozen()||(!state.special&&!state.stowedSpecial)||state.reloading||performance.now()-state.lastShot<350)return;
+  stopEmote();state.specialCharge=0;state.fireHeld=false;state.equipped='gun';state.switchPending=null;
+  if(state.special){state.special.ammo=state.ammo;state.stowedSpecial=state.special;state.special=null;state.ammo=state.normalGunAmmo??WEAPONS[state.selectedWeapon].mag}
+  else{state.normalGunAmmo=state.ammo;state.special=state.stowedSpecial;state.stowedSpecial=null;state.ammo=state.special.ammo??SPECIALS[state.special.type].mag}
+  state.lastShot=performance.now();resetAim();sendHost({t:'specialEquip',active:!!state.special});updateWeaponModel();updateHud();publishCombatPose();toast(state.special?SPECIALS[state.special.type].name:weaponStats(state.selectedWeapon).name);
 }
 function fireSpecial(now){
   if(state.reloading||state.specialCharge||airdropFrozen(now)||now-state.lastShot<gunStats().rate)return;
@@ -1625,7 +1635,7 @@ function specialSound(type,distance=0){
 }
 function hostSpecialFire(id){
   const p=state.players[id],rec=specialOwners.get(id),now=performance.now();
-  if(!state.host||!state.matchActive||!p||p.alive===false||!rec||airdropFrozen(now)||now<rec.reloadUntil)return;
+  if(!state.host||!state.matchActive||!p||p.alive===false||!rec||rec.stowed||now<(rec.switchUntil||0)||airdropFrozen(now)||now<rec.reloadUntil)return;
   if(rec.ammo<=0)rec.ammo=SPECIALS[rec.type].mag;
   const spec=SPECIALS[rec.type],gap=rec.type==='rpg'?spec.reload*.8:spec.rate*.8;if(now-rec.last<gap)return;
   rec.last=now;rec.ammo--;if(rec.ammo<=0)rec.reloadUntil=now+spec.reload;
@@ -1635,13 +1645,13 @@ function hostSpecialFire(id){
 }
 function hostSpecialReload(id){
   const p=state.players[id],rec=specialOwners.get(id),now=performance.now();
-  if(!state.host||!state.matchActive||!p||p.alive===false||!rec||now<rec.reloadUntil||rec.ammo>=SPECIALS[rec.type].mag)return;
+  if(!state.host||!state.matchActive||!p||p.alive===false||!rec||rec.stowed||now<rec.reloadUntil||rec.ammo>=SPECIALS[rec.type].mag)return;
   rec.ammo=0;rec.reloadUntil=now+SPECIALS[rec.type].reload;
 }
 function refillSpecialOnRespawn(id){
   const rec=specialOwners.get(id);if(!rec)return;
   rec.ammo=SPECIALS[rec.type].mag;rec.reloadUntil=0;rec.last=-Infinity;
-  if(state.players[id])state.players[id].special=rec.type;
+  if(state.players[id])state.players[id].special=rec.stowed?null:rec.type;
 }
 function spawnProjectile(msg,sim=false){
   const valid=a=>Array.isArray(a)&&a.length===3&&a.every(Number.isFinite);if(!valid(msg.origin)||!valid(msg.dir))return;
@@ -1746,7 +1756,7 @@ function updatePuffs(dt,now){for(const p of smokePuffs){if(!p.mesh.visible)conti
 function resetAirdropState(){
   removeDrop();for(const pr of [...projectiles])removeProjectile(pr);for(const v of [...vortices])popVortex(v,false);
   for(const fx of blasts){if(fx.parent)fx.parent.remove(fx);disposeFx(fx)}blasts.length=0;smokePuffs.forEach(p=>p.mesh.visible=false);
-  specialOwners.clear();openHolds.clear();state.special=null;state.specialCharge=0;state.openHold=0;
+  specialOwners.clear();openHolds.clear();state.special=null;state.stowedSpecial=null;state.normalGunAmmo=null;state.specialCharge=0;state.openHold=0;
 }
 
 // ---------- Optional proximity voice chat ----------
@@ -2020,7 +2030,7 @@ addEventListener('keydown',e=>{
   e.preventDefault();e.stopImmediatePropagation();
   if(!e.repeat)toggleVoice();
 },true);
-addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','KeyV','KeyG','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(e.code==='KeyV'&&!e.repeat){toggleVoice();return}if(e.code==='KeyG'&&!e.repeat){startBotTalk();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
+addEventListener('keydown',e=>{if(state.matchActive&&!state.alive&&/^(Digit|Numpad)[1-4]$/.test(e.code)){e.preventDefault();chooseRespawnWeapon(Object.keys(WEAPONS)[Number(e.code.slice(-1))-1]);return}if(e.code==='Escape'&&state.matchActive&&state.mode==='game'){pauseGame();return}if(!isPlaying())return;if(['KeyW','KeyA','KeyS','KeyD','Space','KeyR','KeyF','KeyE','KeyB','KeyT','KeyL','KeyM','KeyI','KeyV','KeyG','ControlLeft','ControlRight','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();state.keys[e.code]=true;if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();toggleAirdropWeapon();return}if(e.code==='KeyM'&&!e.repeat){soundMuted=!soundMuted;if(audioMaster)audioMaster.gain.setTargetAtTime(soundMuted?0:.65,audioContext.currentTime,.012);toast(soundMuted?'Sound muted':'Sound on');unlockAudio();return}if(e.code==='KeyV'&&!e.repeat){toggleVoice();return}if(e.code==='KeyG'&&!e.repeat){startBotTalk();return}if(['ControlLeft','ControlRight'].includes(e.code)&&!e.repeat){beginSlide();return}if(e.code==='KeyL'&&!e.repeat){requestMouseCapture();return}if(e.code==='KeyB'&&!e.repeat){toggleBuilding();return}if(e.code==='KeyE'&&!e.repeat){interactOrEmote();return}if(e.code==='KeyI'&&!e.repeat){inspectWeapon();return}if(state.buildMode){if(e.code==='KeyT'&&!e.repeat)state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];if(e.code==='KeyR'&&!e.repeat)state.buildRotation=(state.buildRotation+1)%4;return}if(['KeyR','KeyF','ShiftLeft','ShiftRight'].includes(e.code))stopEmote();if(e.code==='KeyR')reload();if(e.code==='KeyF'&&!e.repeat)toggleBat();if(['ShiftLeft','ShiftRight'].includes(e.code)&&!e.repeat&&state.equipped==='gun')state.aiming=!state.aiming});addEventListener('keyup',e=>state.keys[e.code]=false);
 addEventListener('blur',clearInput);addEventListener('blur',stopBotTalk);addEventListener('keyup',e=>{if(e.code==='KeyG')stopBotTalk()});document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput()});
 addEventListener('keydown',e=>{if(isPlaying()&&state.map==='surf'&&e.code==='KeyR'&&!e.repeat){e.preventDefault();resetSurfRun(true)}});
 addEventListener('mousedown',e=>{if(!isPlaying()||(!controls.isLocked&&e.target!==$('game')))return;if(!controls.isLocked)requestMouseCapture();if(state.buildMode){if(e.button===0){focusGame();state.buildHeld=true;requestBuild()}if(e.button===2){e.preventDefault();toggleBuilding()}return}if(e.button===0||e.button===2)stopEmote();if(e.button===2){e.preventDefault();if(state.equipped==='gun')state.aiming=true;focusGame()}if(e.button===0){focusGame();if(!controls.isLocked)requestMouseCapture();if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}});addEventListener('mouseup',e=>{if(e.button===0){state.fireHeld=false;state.buildHeld=false;}if(e.button===2)state.aiming=false});document.addEventListener('contextmenu',e=>{if(state.matchActive)e.preventDefault()});addEventListener('mousemove',handleMouseLook);$('game').addEventListener('mouseleave',()=>{state.mouseOver=false;state.mouseX=null;state.mouseY=null;if(!controls.isLocked){state.aiming=false;state.fireHeld=false}});

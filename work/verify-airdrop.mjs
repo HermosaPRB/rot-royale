@@ -66,12 +66,13 @@ run(`grantSpecial('rpg');specialOwners.set('host',{type:'rpg',ammo:1,reloadUntil
 assert.equal(run('state.special.type'),'rpg');assert.equal(run('state.ammo'),1);assert.equal(run('state.special.reserve'),Infinity);
 assert.ok(!run(`[...document.getElementById('respawn-weapons').innerHTML.matchAll(/rpg|toilet/gi)].length`),'specials never offered on respawn');
 run(`renderRespawnLoadout()`);assert.ok(!/rpg|toilet/i.test(run(`document.getElementById('respawn-weapons').innerHTML`)),'respawn loadout excludes specials');
+run('shotBlockers.length=0'); // Isolate falloff from map geometry; cover is tested separately below.
 const blastAt=d=>{run(`state.players.enemy={...state.players.enemy,health:100,alive:true,x:${d},y:1.7,z:-20};explodeRocket(new THREE.Vector3(0,.85,-20),'host')`);return 100-run('state.players.enemy.health')};
-const near=blastAt(.5),mid=blastAt(2.5),far=blastAt(4.2),out=blastAt(6);
+const near=blastAt(.5),mid=blastAt(5),far=blastAt(6.2),out=blastAt(7);
 assert.ok(near>mid&&mid>far&&far>0&&out===0,`rocket falloff ${near} > ${mid} > ${far} > ${out}`);
 run(`const wall=new THREE.Mesh(new THREE.BoxGeometry(.4,6,6));wall.position.set(1.5,1,-20);world.add(wall);wall.updateMatrixWorld(true);shotBlockers.push(wall)`);
 assert.equal(blastAt(2.8),0,'walls block splash');run('shotBlockers.length=0');
-run(`state.players.host.health=100;state.health=100;explodeRocket(new THREE.Vector3(0,.85,10),'host')`);assert.equal(run('state.players.host.health'),40,'self damage is 50%');
+run(`state.players.host.health=100;state.health=100;explodeRocket(new THREE.Vector3(0,.85,10),'host')`);assert.ok(Math.abs(run('state.players.host.health')-47.2)<.01,'self damage is 22% of the stronger blast');
 const killsBefore=run('state.players.host.kills||0');run(`state.players.host.health=30;explodeRocket(new THREE.Vector3(0,.85,10),'host')`);assert.equal(run('state.players.host.alive'),false,'self rocket can kill you');assert.equal(run('state.players.host.kills||0'),killsBefore,'self kill scores nothing');
 run(`state.players.host={...myPublic(),health:100,alive:true,x:0,y:1.7,z:10,kills:0,deaths:0};state.alive=true;state.health=100;state.special={type:'rpg',reserve:Infinity};state.ammo=1;specialOwners.set('host',{type:'rpg',ammo:1,reloadUntil:0,last:-Infinity});state.lastShot=-Infinity;state.reloading=false;camera.rotation.set(0,0,0)`);
 for(let shot=0;shot<3;shot++){run('state.lastShot=-Infinity;shoot()');assert.ok(run(`sent.some(m=>m.t==='proj'&&m.kind==='rocket')`),'rocket launched');run('sent.length=0');
@@ -81,11 +82,11 @@ run('state.lastShot=-Infinity;shoot()');assert.ok(run(`sent.some(m=>m.t==='proj'
 
 // 6. Toilet gun: charged shot, pull, tick damage, pop.
 run(`grantSpecial('toilet');specialOwners.set('host',{type:'toilet',ammo:5,reloadUntil:0,last:-Infinity});state.lastShot=-Infinity`);assert.equal(run('state.ammo'),5);
-assert.equal(run('SPECIALS.toilet.speed'),40,'orb travels faster');assert.equal(run('VORTEX.charge'),200,'orb charges sooner');assert.equal(run('VORTEX.direct'),45,'direct damage unchanged');assert.equal(run('VORTEX.pull'),20,'vortex pull unchanged');
-run('shoot()');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'toilet gun charges before firing');now+=150;run('updateSpecial(performance.now())');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'orb does not fire before 200ms');now+=70;run('updateSpecial(performance.now())');assert.ok(run(`sent.some(m=>m.t==='proj'&&m.kind==='orb')`),'orb fires after the shorter charge');
+assert.equal(run('SPECIALS.toilet.speed'),65,'orb travels faster');assert.equal(run('VORTEX.charge'),80,'orb charges sooner');assert.equal(run('VORTEX.direct'),100,'direct hit eliminates full health');assert.equal(run('VORTEX.pull'),32,'stronger vortex pull');
+run('shoot()');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'toilet gun charges before firing');now+=40;run('updateSpecial(performance.now())');assert.ok(!run(`sent.some(m=>m.t==='proj')`),'orb does not fire before 80ms');now+=50;run('updateSpecial(performance.now())');assert.ok(run(`sent.some(m=>m.t==='proj'&&m.kind==='orb')`),'orb fires after the shorter charge');
 run(`for(const pr of [...projectiles])removeProjectile(pr);state.players.enemy={...state.players.enemy,health:100,alive:true,x:1,y:1.7,z:-30};state.velocityX=state.velocityZ=0;camera.position.set(2.5,1.7,-30);spawnVortex({id:99,x:0,y:.85,z:-30,owner:'host'},true);spawnVortex({id:98,x:0,y:.85,z:-30,owner:'enemy'},false)`);
 tick(400);assert.ok(run('state.velocityX')<-.5,'vortex pulls you toward its center');
-assert.ok(run('state.players.enemy.health')<100&&run('state.players.enemy.health')>90,'vortex tick damage');
+assert.ok(run('state.players.enemy.health')<=88&&run('state.players.enemy.health')>0,'stronger vortex tick damage');
 tick(1300);assert.ok(run('state.players.enemy.health')<55,`vortex pop damage (health ${run('state.players.enemy.health')})`);
 run(`state.players.host={...myPublic(),health:100,alive:true,x:0,y:1.7,z:10,kills:0,deaths:0};state.alive=true;state.health=100;grantSpecial('toilet');specialOwners.set('host',{type:'toilet',ammo:5,reloadUntil:0,last:-Infinity});state.lastShot=-Infinity`);
 for(let shot=0;shot<5;shot++){now+=700;run('launchSpecial(performance.now())')}
@@ -121,4 +122,8 @@ for(const item of ['rpg','toilet']){
   assert.equal(clientRun('state.special?.type'),item,`${item}: non-host respawns with special`);
   assert.equal(clientRun('state.ammo'),run(`SPECIALS.${item}.mag`),`${item}: non-host gets a fresh magazine`);
 }
-console.log(`PASS airdrop: 45-75s timing (mean ${(mean/1000).toFixed(1)}s), 4s frozen cinematic, landing y neon ${landings.neon} / piazza ${landings.piazza} / factory ${landings.factory}, secret loot, host-validated hold-to-open, RPG splash/LOS/self-damage/reload, toilet vortex pull+ticks+pop, special weapons persist through ammo use and death.`);
+run(`state.host=true;state.id='host';state.mode='game';state.matchActive=true;state.alive=true;state.reloading=false;state.special=null;state.selectedWeapon='ar';state.ammo=17;grantSpecial('toilet');specialOwners.set('host',{type:'toilet',ammo:3,reloadUntil:0,last:-Infinity});state.ammo=3;state.lastShot=-Infinity;toggleAirdropWeapon()`);
+assert.equal(run('state.special'),null);assert.equal(run('state.ammo'),17,'normal magazine preserved');assert.equal(run(`specialOwners.get('host').stowed`),true,'host tracks stowed special');
+run('state.ammo=12;state.lastShot=-Infinity;toggleAirdropWeapon()');assert.equal(run('state.ammo'),3,'special magazine preserved, not refilled by switching');assert.equal(run('state.special.type'),'toilet');
+run('state.lastShot=-Infinity;toggleAirdropWeapon()');assert.equal(run('state.ammo'),12);run(`doRespawn(0,10,'smg')`);assert.equal(run('state.stowedSpecial.ammo'),5,'stowed gun refills on respawn');assert.equal(run('state.special'),null,'normal stays selected after respawn');
+console.log(`PASS airdrop: timing, ownership, host/client awards, buffed projectiles, cover, reload, persistent ownership and Q switching with independent magazines.`);
