@@ -1470,16 +1470,17 @@ function findLandingSpot(){
 }
 function pointBlocked(q){if(q.y<=.02)return true;return colliders.some(c=>!c.ramp&&q.x>c.minX&&q.x<c.maxX&&q.z>c.minZ&&q.z<c.maxZ&&q.y>(c.minY??-Infinity)&&q.y<(c.maxY??Infinity))}
 
-function scheduleAirdrop(){airdropPlan=state.map==='surf'?null:{at:Date.now()+AIRDROP.MIN_DELAY+Math.random()*(AIRDROP.MAX_DELAY-AIRDROP.MIN_DELAY),item:Math.random()<.5?'rpg':'toilet',heading:Math.random()*Math.PI*2,done:false}}
+function scheduleAirdrop(){airdropPlan=state.map!=='neon'?null:{at:Date.now()+AIRDROP.MIN_DELAY+Math.random()*(AIRDROP.MAX_DELAY-AIRDROP.MIN_DELAY),item:Math.random()<.5?'rpg':'toilet',heading:Math.random()*Math.PI*2,done:false}}
 // The item stays host-only until the crate is opened.
 function publicDrop(){if(!drop)return null;return{id:drop.id,x:drop.x,y:drop.y,z:drop.z,heading:drop.heading,since:performance.now()-drop.announcedAt,openedBy:drop.openedBy||null,openedName:drop.openedName||null,item:drop.openedBy?drop.item:null}}
 function announceAirdrop(){
+  if(state.map!=='neon'||!airdropPlan)return;
   airdropPlan.done=true;
   const spot=findLandingSpot();startLocalAirdrop({id:'drop-'+Date.now().toString(36),...spot,heading:airdropPlan.heading,since:0});drop.item=airdropPlan.item;
   broadcast({t:'airdrop',drop:publicDrop()});
 }
 function applyDropState(pub){
-  if(!pub){if(drop)removeDrop();return}
+  if(state.map!=='neon'||!pub){if(drop)removeDrop();return}
   if(!drop||drop.id!==pub.id){if(drop)removeDrop();startLocalAirdrop(pub)}
   if(pub.openedBy&&!drop.openedBy)openDropLocal(pub);
 }

@@ -20,14 +20,21 @@ function match(map){
     resetAirdropState();sent.length=0;camera.position.set(5,1.7,5);scheduleAirdrop();airdropPlan.at=Date.now()-1;`);
 }
 
-// 1. Timing: 45-75s, mean about 60s; never on Surf.
+// 1. Timing: 45-75s, mean about 60s; Neon Town only.
 run(`state.map='neon'`);const delays=[];for(let i=0;i<200;i++){run('scheduleAirdrop()');delays.push(run('airdropPlan.at-Date.now()'))}
 assert.ok(delays.every(d=>d>=44990&&d<=75010),'airdrop always lands in the 45-75s window');
 const mean=delays.reduce((a,b)=>a+b,0)/delays.length;assert.ok(Math.abs(mean-60000)<3500,`mean delay near 60s (${Math.round(mean)})`);
-run(`state.map='surf';scheduleAirdrop()`);assert.equal(run('airdropPlan'),null,'no airdrop on Surf');
+for(const map of ['piazza','factory','surf']){
+  for(const practice of [false,true]){
+    run(`resetAirdropState();state.map='${map}';state.practice=${practice};scheduleAirdrop()`);
+    assert.equal(run('airdropPlan'),null,`${map}: no scheduled drop (practice=${practice})`);
+    run(`airdropPlan={at:0,item:'rpg',heading:0,done:false};announceAirdrop();applyDropState({id:'stale',x:0,y:0,z:0,heading:0,since:0})`);
+    assert.equal(run('drop'),null,`${map}: stale host plan and client snapshot rejected`);
+  }
+}
 
 const landings={};
-for(const map of ['neon','piazza','factory']){
+for(const map of ['neon']){
   match(map);tick(16);
   assert.ok(run('!!drop'),`${map}: airdrop announced`);
   assert.equal(run(`sent.find(m=>m.t==='airdrop').drop.item`),null,`${map}: loot stays secret before opening`);
