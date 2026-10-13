@@ -371,7 +371,7 @@ function updateLobbyPreview(){
 function initWorld(){
   scene=new THREE.Scene();scene.background=new THREE.Color(0x82c9e8);scene.fog=new THREE.Fog(0x92c9dc,55,125);
   camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,160);camera.position.set(0,1.7,12);
-  renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,touchMode?1.25:1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   controls=new PointerLockControls(camera,$('game'));controls.pointerSpeed=0;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;state.mouseX=state.mouseY=null;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
   document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
@@ -1982,7 +1982,7 @@ function leaveToHome(message=''){banterOn=false;stopBotSpeech();stopBotTalk();qu
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
 function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.jumpQueued=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
-function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto';$('capture-mouse').hidden=!isPlaying()||controls.isLocked}
+function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto';$('capture-mouse').hidden=touchMode||!isPlaying()||controls.isLocked;updateTouchUi()}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='MOUSE CAPTURE BLOCKED · OPEN THIS URL IN CHROME / EDGE FOR UNLIMITED MOUSE LOOK · ← / → ALSO TURN';$('control-hint').classList.remove('hidden')}
 function handleMouseLook(e){
   // One rotation owner for both capture and fallback: no competing pitch limits.
@@ -2005,6 +2005,7 @@ function handleMouseLook(e){
 }
 function requestMouseCapture(){
   unlockAudio();
+  if(touchMode){$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true;return}
   if(isPlaying())focusGame();
   if(!isPlaying()||state.capturePending||controls.isLocked)return;
   if(!$('game').requestPointerLock){useFallbackControls();return}
@@ -2012,6 +2013,78 @@ function requestMouseCapture(){
   try{const pending=$('game').requestPointerLock();if(pending?.catch)pending.catch(useFallbackControls);setTimeout(()=>{if(state.capturePending&&!controls.isLocked)useFallbackControls()},1500)}catch{useFallbackControls()}
 }
 function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
+
+// Independent pointer IDs let movement, look, fire and jump work simultaneously.
+const touchMode=!!globalThis.matchMedia?.('(pointer: coarse)').matches;
+const touchPointers=new Map();
+function resetTouchInput(){
+  touchPointers.clear();
+  for(const k of ['KeyW','KeyA','KeyS','KeyD','Space'])state.keys[k]=false;
+  state.fireHeld=state.buildHeld=false;
+  if(touchMode){$('touch-stick').style.transform='';document.querySelectorAll('[data-touch]').forEach(b=>b.classList.remove('pressed'))}
+}
+function updateTouchUi(){
+  if(!touchMode)return;
+  const active=isPlaying();$('touch-controls').hidden=!active;
+  if(!active&&touchPointers.size)resetTouchInput();
+  $('touch-aim').classList.toggle('pressed',state.aiming);
+  $('touch-special').hidden=!(state.special||state.stowedSpecial);
+  $('touch-fire').textContent=state.buildMode?'PLACE':state.equipped==='bat'?'SWING':'FIRE';
+  $('touch-build').classList.toggle('pressed',state.buildMode);
+  $('touch-piece').hidden=$('touch-rotate').hidden=!state.buildMode;
+}
+function touchMoveStick(x,y){
+  const length=Math.hypot(x,y),scale=length>48?48/length:1;x*=scale;y*=scale;
+  $('touch-stick').style.transform=`translate(${x}px,${y}px)`;
+  state.keys.KeyW=y < -10;state.keys.KeyS=y > 10;state.keys.KeyA=x < -10;state.keys.KeyD=x > 10;
+  if(length>10)stopEmote();
+}
+function touchLook(dx,dy){
+  if(!isPlaying()||airdropFrozen())return;
+  const sensitivity=.004*preferences.sensitivity*aimSensitivity()*(1+(preferences.ads-1)*state.aimBlend);
+  camera.rotation.order='YXZ';camera.rotation.y-=dx*sensitivity;
+  camera.rotation.x=clamp(camera.rotation.x-dy*sensitivity*(preferences.invertY?-1:1),-1.45,1.45);camera.rotation.z=0;
+}
+function touchAction(action,down){
+  if(!down){if(action==='fire')state.fireHeld=state.buildHeld=false;if(action==='jump')state.keys.Space=false;return}
+  if(!isPlaying())return;unlockAudio();
+  if(action==='fire'){stopEmote();if(state.buildMode){state.buildHeld=true;requestBuild()}else if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}
+  if(action==='jump'){state.keys.Space=true;state.jumpQueued=true}
+  if(action==='aim'&&state.equipped==='gun'){stopEmote();state.aiming=!state.aiming}
+  if(action==='reload')reload();if(action==='slide')beginSlide();if(action==='melee')toggleBat();
+  if(action==='special')toggleAirdropWeapon();if(action==='pause')pauseGame();
+  if(action==='emote')interactOrEmote();if(action==='build')toggleBuilding();
+  if(action==='piece')state.buildType=['wall','ramp','floor'][(['wall','ramp','floor'].indexOf(state.buildType)+1)%3];
+  if(action==='rotate')state.buildRotation=(state.buildRotation+1)%4;
+}
+function initTouchControls(){
+  if(!touchMode)return;document.documentElement.classList.add('touch-device');
+  const root=$('touch-controls');
+  root.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse'||!isPlaying())return;
+    const button=e.target.closest('[data-touch]'),action=button?.dataset.touch;if(!action)return;
+    if([...touchPointers.values()].some(p=>p.action===action))return;
+    e.preventDefault();root.setPointerCapture(e.pointerId);
+    const rect=button.getBoundingClientRect();
+    const p={action,x:e.clientX,y:e.clientY,cx:rect.left+rect.width/2,cy:rect.top+rect.height/2};touchPointers.set(e.pointerId,p);
+    if(action==='move')touchMoveStick(e.clientX-p.cx,e.clientY-p.cy);
+    else if(action!=='look'){button.classList.add('pressed');touchAction(action,true)}
+  });
+  root.addEventListener('pointermove',e=>{
+    const p=touchPointers.get(e.pointerId);if(!p)return;e.preventDefault();
+    if(!isPlaying()){resetTouchInput();return}
+    if(p.action==='move')touchMoveStick(e.clientX-p.cx,e.clientY-p.cy);
+    if(p.action==='look'||p.action==='fire')touchLook(e.clientX-p.x,e.clientY-p.y);
+    p.x=e.clientX;p.y=e.clientY;
+  });
+  const release=e=>{const p=touchPointers.get(e.pointerId);if(!p)return;touchPointers.delete(e.pointerId);
+    if(p.action==='move')touchMoveStick(0,0);else touchAction(p.action,false);
+    root.querySelector(`[data-touch="${p.action}"]`)?.classList.remove('pressed');
+  };
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])root.addEventListener(event,release);
+  addEventListener('blur',resetTouchInput);addEventListener('resize',resetTouchInput);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)resetTouchInput()});
+}
 
 function openSettings(){rebindingAction=null;state.mode='settings';renderKeybinds();renderPreferences();showScreen('settings')}
 function closeSettings(){rebindingAction=null;state.mode='home';showScreen('home');renderKeybinds()}
@@ -2052,4 +2125,5 @@ function updateLobbyModeUI(){
   $('match-summary').textContent=state.map==='factory'?'Three floors: stop beside ladders to auto-climb from ground to mezzanines, then up to the bridge. Belts carry you; steam hides players but not bullets.':'Most eliminations wins. Respawn and keep playing.';
   $('win-rule').textContent='Most eliminations in 3 minutes wins.';
 }
+initTouchControls();
 renderKeybinds();buildChoices();initWorld();showScreen('home');

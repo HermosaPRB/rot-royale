@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="Rot Royale: fast multiplayer arena combat in Neon Town and Piazza Panic. Find cyber weapon cases, chain bunny hops, and rule the round.">
   <title>Rot Royale</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./styles.css?v=bot-talk-55">
   <link rel="stylesheet" href="./lobby.css?v=skins-29">
   <link rel="stylesheet" href="./interface.css?v=incoming-67">
+  <link rel="stylesheet" href="./mobile.css?v=touch-71">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <!-- Bot trash-talk proxy (bot-voice/worker.js). Empty = feature off. -->
   <meta name="bot-voice-endpoint" content="">
@@ -179,8 +180,19 @@
       <div id="respawn" class="respawn"><div class="respawn-card"><div class="eyebrow">ONE MORE SHOT</div><strong>Back in the action.</strong><div class="respawn-clock"><span id="respawn-time">3</span><small>SECONDS</small></div><p>Same plan, or switch it up?</p><div id="respawn-weapons" class="respawn-weapons" aria-label="Next-spawn loadout"></div><p id="respawn-loadout-note" aria-live="polite"></p><small>Press 1–4 to switch · You’ll respawn automatically</small></div></div>
     </section>
 
+    <div id="touch-controls" hidden aria-label="Touch game controls">
+      <div class="touch-look" data-touch="look" aria-label="Drag to look"></div>
+      <div class="touch-move" data-touch="move" aria-label="Movement joystick"><span id="touch-stick"></span></div>
+      <div class="touch-top"><button data-touch="pause" aria-label="Pause game">PAUSE</button><button data-touch="emote">DANCE</button><button id="touch-build" data-touch="build">BUILD</button><button id="touch-piece" data-touch="piece" hidden>PIECE</button><button id="touch-rotate" data-touch="rotate" hidden>ROTATE</button></div>
+      <div class="touch-actions">
+        <button id="touch-special" data-touch="special" hidden>SWAP GUN</button><button data-touch="melee">GUN / BAT</button><button data-touch="reload">RELOAD</button>
+        <button data-touch="slide">SLIDE</button><button id="touch-aim" data-touch="aim">AIM</button><button data-touch="jump">JUMP</button>
+        <button id="touch-fire" data-touch="fire">FIRE</button>
+      </div>
+      <small class="touch-tip">Left stick to move · Drag right to look · Landscape recommended</small>
+    </div>
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=neon-airdrop-70"></script>
+  <script type="module" src="./game.js?v=touch-71"></script>
 </body>
 </html>

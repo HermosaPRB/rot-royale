@@ -1,0 +1,39 @@
+/* Touch surfaces are separate from the HUD so menus retain normal scrolling. */
+#touch-controls[hidden]{display:none!important}
+#touch-controls{position:fixed;inset:0;z-index:12;pointer-events:none;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#touch-controls [data-touch]{pointer-events:auto;touch-action:none}
+.touch-look{position:absolute;inset:0 0 0 38%}
+.touch-move{position:absolute;left:max(22px,env(safe-area-inset-left));bottom:max(32px,env(safe-area-inset-bottom));width:140px;height:140px;border:2px solid #ffffff55;border-radius:50%;background:#102b3d38;display:grid;place-items:center}
+#touch-stick{width:54px;height:54px;border-radius:50%;border:2px solid #ffffffb0;background:#e7f6ff60;pointer-events:none}
+.touch-top{position:absolute;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:5px}
+#touch-controls button{min-width:48px;min-height:44px;border:1px solid #ffffff75;border-radius:12px;background:#102b3d99;color:white;font:700 10px "DM Sans",sans-serif;padding:8px;text-shadow:0 1px 2px #000}
+#touch-controls button.pressed{background:#e8b655b3;border-color:#ffe2a0}
+.touch-actions{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(22px,env(safe-area-inset-bottom));width:204px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
+#touch-controls #touch-fire{grid-column:2/4;min-height:62px;border-radius:32px;background:#9f493ab3;font-size:16px}
+.touch-tip{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);color:#fff9;font:10px sans-serif;white-space:nowrap}
+.touch-device #game{touch-action:none}
+.touch-device #capture-mouse,.touch-device #control-hint,.touch-device #aim-status,.touch-device #melee-status{display:none!important}
+.touch-device .hud-bottom{bottom:auto;top:65px;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right))}
+.touch-device .health-wrap{width:100px}.touch-device #health-number,.touch-device .weapon-hud strong{font-size:1.4rem}
+.touch-device .health-wrap small,.touch-device #weapon-rarity{display:none}
+.touch-device .voice-hud{left:max(12px,env(safe-area-inset-left));bottom:185px;font-size:9px;padding:8px}
+.touch-device .hud-top .total-kills{top:0;left:12px;transform:none;min-width:60px;padding:4px}
+.touch-device .hud-top .timer{top:0;min-width:65px;padding:4px}
+.touch-device .hud-top strong{font-size:1.2rem}
+.touch-device .mini-leaderboard{display:none}
+.touch-device .kill-feed{top:120px;right:12px;width:180px;font-size:10px}
+.touch-device .screen{padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));overflow:auto}
+.touch-device .screen>.card,.touch-device .settings-card{max-height:90dvh;overflow:auto}
+.touch-device #home .rules-strip{display:none}
+.touch-device #home input{font-size:16px}
+.touch-device #home .fighter-stage{height:230px;min-height:180px}
+.touch-device #respawn{overflow:auto;align-items:start;padding:12px}
+.touch-device #respawn .respawn-card{margin:auto;padding:16px;max-width:520px}
+@media(orientation:landscape) and (max-height:520px){
+  .touch-device #respawn .respawn-card>strong{font-size:1.6rem}
+  .touch-device .respawn-clock{margin:5px auto;transform:scale(.75)}
+  .touch-device #respawn .respawn-card p{margin:5px}
+  .touch-device .bot-subtitle{bottom:50px;max-width:40vw;font-size:11px}
+  .touch-tip{display:none}
+}
+@media(orientation:portrait){.touch-actions{width:180px;gap:6px}.touch-move{left:12px;width:120px;height:120px}.touch-top{top:125px;width:max-content}.touch-device .kill-feed{display:none}.touch-tip{font-size:9px}}
