@@ -36,4 +36,51 @@
   .touch-device .bot-subtitle{bottom:50px;max-width:40vw;font-size:11px}
   .touch-tip{display:none}
 }
-@media(orientation:portrait){.touch-actions{width:180px;gap:6px}.touch-move{left:12px;width:120px;height:120px}.touch-top{top:125px;width:max-content}.touch-device .kill-feed{display:none}.touch-tip{font-size:9px}}
+#rotate-screen{display:none}
+@media(orientation:portrait){
+  .touch-device #rotate-screen{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:32px;text-align:center;background:#a7d5ed;color:#193d53}
+  .touch-device #rotate-screen h2{font-size:clamp(24px,7vw,36px);line-height:1.1;letter-spacing:-.04em}
+  .touch-device #rotate-screen p{margin:0;font-size:17px;line-height:1.5}
+  .touch-device #rotate-screen small{max-width:290px;font-size:12px;line-height:1.6;color:#456a80}
+  .rotate-phone{width:112px;height:65px;border:4px solid #193d53;border-radius:14px;display:grid;place-items:center;font-size:40px;line-height:1;box-shadow:6px 6px 0 #193d5320}
+  .touch-device #app{visibility:hidden}
+  .touch-device #touch-controls{display:none!important}
+}
+@media(orientation:landscape) and (max-height:520px){
+  .touch-device #home{padding:10px max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left))}
+  .touch-device #home .home-shell{display:grid;grid-template-columns:130px minmax(245px,1fr) 150px;gap:16px;min-height:calc(100dvh - 20px)}
+  .touch-device #home .identity-panel{display:flex;flex-direction:column;gap:10px}
+  .touch-device #home h1{font-size:1.8rem}
+  .touch-device #home .brand-block{margin:0}
+  .touch-device #home .field-label,.touch-device #home .panel-title{font-size:11px;margin-bottom:4px}
+  .touch-device #home .choice-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+  .touch-device #home .character .avatar,.touch-device #home .character .avatar img{height:45px}
+  .touch-device #home .character small{font-size:11px;min-height:22px}
+  .touch-device #home .match-badge,.touch-device #home .match-badge span{font-size:11px}
+  .touch-device #home .match-summary{display:none}
+  .touch-device #home .fighter-stage{height:100px;min-height:100px}
+  .touch-device #home .fighter-caption h2{font-size:18px}
+  .touch-device #home .fighter-caption>span{font-size:10px}
+  .touch-device #home .loadout-panel{margin:8px 0}
+  .touch-device #home .weapon{min-height:44px;padding:6px}
+  .touch-device #home .weapon strong{font-size:11px}
+  .touch-device #home .play-actions{gap:6px}
+  .touch-device #home .play-actions button,.touch-device #home .play-actions #create-room{min-height:48px;padding:6px;font-size:13px}
+  .touch-device #home .play-actions button small{font-size:10px}
+  .touch-device #home .room-panel{margin-top:8px;gap:5px}
+  .touch-device #home .room-panel label{display:none}
+  .touch-device #home .match-info{grid-column:auto;border:0;padding:0;margin:0}
+  .touch-device #home .match-info h2{font-size:18px}
+  .touch-device #home .map-location,.touch-device #home .room-tip{display:none}
+  .touch-device #home .rule-heading{padding-top:10px;font-size:12px}
+  .touch-device #home .match-info p:not(.map-location){font-size:12px;margin:8px 0}
+  .touch-device #home .match-rules,.touch-device #home .loot-rules{padding:8px 0}
+  .touch-device #home summary{font-size:12px}
+  .touch-device .touch-move{width:120px;height:120px;bottom:max(20px,env(safe-area-inset-bottom))}
+  .touch-device .voice-hud{bottom:155px}
+}
+@media(orientation:landscape) and (max-width:700px){
+  .touch-device #home .home-shell{grid-template-columns:110px minmax(210px,1fr) 130px;gap:10px}
+  .touch-device #home .weapon-list{gap:4px}
+  .touch-device .touch-actions{width:190px;gap:6px}
+}

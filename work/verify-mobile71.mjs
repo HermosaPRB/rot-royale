@@ -5,7 +5,7 @@ const src=fs.readFileSync(new URL('../dist/game.js',import.meta.url),'utf8');
 const nodes=new Map(),listeners=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{dataset:{touch:id},hidden:false,style:{},classList:{add(){},remove(){},toggle(){}},getBoundingClientRect:()=>({left:0,top:0,width:140,height:140}),closest(){return this},setPointerCapture(){},addEventListener:(name,fn)=>listeners.set(name,fn),querySelector:()=>null});return nodes.get(id)}
 let playing=true,shots=0,slides=0,swaps=0;
-const ctx=vm.createContext({matchMedia:()=>({matches:true}),$:node,state:{keys:{},equipped:'gun',aimBlend:0},preferences:{sensitivity:1,ads:1},camera:{rotation:{x:0,y:0,z:0}},
+const ctx=vm.createContext({innerWidth:844,innerHeight:390,matchMedia:()=>({matches:true}),$:node,state:{keys:{},equipped:'gun',aimBlend:0},preferences:{sensitivity:1,ads:1},camera:{rotation:{x:0,y:0,z:0}},
   document:{documentElement:node('html'),querySelectorAll:()=>[],addEventListener(){}},addEventListener(){},isPlaying:()=>playing,airdropFrozen:()=>false,aimSensitivity:()=>1,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),stopEmote(){},unlockAudio(){},shoot:()=>shots++,beginSlide:()=>slides++,toggleAirdropWeapon:()=>swaps++,pauseGame:()=>playing=false});
 vm.runInContext(src.slice(src.indexOf('const touchMode='),src.indexOf('function openSettings(')),ctx);
 ctx.initTouchControls();
@@ -22,6 +22,10 @@ ctx.touchAction('aim',true);assert.equal(ctx.state.aiming,true);ctx.touchAction(
 ctx.touchAction('slide',true);ctx.touchAction('special',true);assert.equal(slides,1);assert.equal(swaps,1);
 for(let i=0;i<100;i++)ctx.touchLook(100,100);assert.ok(ctx.camera.rotation.y < -Math.PI*2,'unlimited yaw');assert.equal(ctx.camera.rotation.x,-1.45,'bounded pitch');
 ctx.touchAction('pause',true);ctx.updateTouchUi();assert.equal(node('touch-controls').hidden,true);assert.equal(ctx.state.keys.Space,false);assert.equal(ctx.state.fireHeld,false);
+playing=true;ctx.updateTouchUi();assert.equal(node('touch-controls').hidden,false);
+ctx.state.fireHeld=true;ctx.state.keys.Space=true;ctx.innerWidth=390;ctx.innerHeight=844;ctx.handleTouchViewport();
+assert.equal(playing,false,'rotation to portrait pauses local controls');assert.equal(node('touch-controls').hidden,true);assert.equal(node('app').inert,true);assert.equal(ctx.state.fireHeld,false);assert.equal(ctx.state.keys.Space,false);
+ctx.innerWidth=844;ctx.innerHeight=390;ctx.handleTouchViewport();assert.equal(node('app').inert,false);assert.equal(playing,false,'rotation back waits for explicit resume');
 playing=true;ctx.updateTouchUi();assert.equal(node('touch-controls').hidden,false);
 assert.match(src,/if\(touchMode\)\{\$\('control-hint'\).*?return\}/,'touch bypasses pointer lock');
 console.log('PASS mobile: simultaneous move/look/fire/jump, cancel/lost capture, aim toggle, slide, swap, unlimited yaw, pause cleanup and pointer-lock bypass.');

@@ -2017,6 +2017,13 @@ function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput(
 // Independent pointer IDs let movement, look, fire and jump work simultaneously.
 const touchMode=!!globalThis.matchMedia?.('(pointer: coarse)').matches;
 const touchPointers=new Map();
+function touchPortrait(){return touchMode&&innerHeight>innerWidth}
+function handleTouchViewport(){
+  resetTouchInput();
+  // Stop local actions on rotation; online matches continue for everyone else.
+  if(touchPortrait()&&isPlaying())pauseGame();
+  updateTouchUi();
+}
 function resetTouchInput(){
   touchPointers.clear();
   for(const k of ['KeyW','KeyA','KeyS','KeyD','Space'])state.keys[k]=false;
@@ -2025,7 +2032,8 @@ function resetTouchInput(){
 }
 function updateTouchUi(){
   if(!touchMode)return;
-  const active=isPlaying();$('touch-controls').hidden=!active;
+  const portrait=touchPortrait(),active=isPlaying()&&!portrait;$('touch-controls').hidden=!active;
+  $('app').inert=portrait;
   if(!active&&touchPointers.size)resetTouchInput();
   $('touch-aim').classList.toggle('pressed',state.aiming);
   $('touch-special').hidden=!(state.special||state.stowedSpecial);
@@ -2040,14 +2048,14 @@ function touchMoveStick(x,y){
   if(length>10)stopEmote();
 }
 function touchLook(dx,dy){
-  if(!isPlaying()||airdropFrozen())return;
+  if(!isPlaying()||touchPortrait()||airdropFrozen())return;
   const sensitivity=.004*preferences.sensitivity*aimSensitivity()*(1+(preferences.ads-1)*state.aimBlend);
   camera.rotation.order='YXZ';camera.rotation.y-=dx*sensitivity;
   camera.rotation.x=clamp(camera.rotation.x-dy*sensitivity*(preferences.invertY?-1:1),-1.45,1.45);camera.rotation.z=0;
 }
 function touchAction(action,down){
   if(!down){if(action==='fire')state.fireHeld=state.buildHeld=false;if(action==='jump')state.keys.Space=false;return}
-  if(!isPlaying())return;unlockAudio();
+  if(!isPlaying()||touchPortrait())return;unlockAudio();
   if(action==='fire'){stopEmote();if(state.buildMode){state.buildHeld=true;requestBuild()}else if(state.equipped==='bat')meleeAttack();else{state.fireHeld=true;shoot()}}
   if(action==='jump'){state.keys.Space=true;state.jumpQueued=true}
   if(action==='aim'&&state.equipped==='gun'){stopEmote();state.aiming=!state.aiming}
@@ -2082,7 +2090,7 @@ function initTouchControls(){
     root.querySelector(`[data-touch="${p.action}"]`)?.classList.remove('pressed');
   };
   for(const event of ['pointerup','pointercancel','lostpointercapture'])root.addEventListener(event,release);
-  addEventListener('blur',resetTouchInput);addEventListener('resize',resetTouchInput);
+  addEventListener('blur',resetTouchInput);addEventListener('resize',handleTouchViewport);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)resetTouchInput()});
 }
 
