@@ -1,3 +1,15 @@
 bot-voice/.dev.vars
 bot-voice/.wrangler/
 bot-voice/node_modules/
+/node_modules/
+/.sites-runtime/
+/.wrangler/
+/.vinext/
+/.next/
+/public/
+/dist/client/
+/dist/server/
+/dist/.openai/
+.env*
+npm-debug.log*
+/next-env.d.ts

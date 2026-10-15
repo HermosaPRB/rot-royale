@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./lobby.css?v=skins-29">
   <link rel="stylesheet" href="./interface.css?v=incoming-67">
   <link rel="stylesheet" href="./mobile.css?v=landscape-72">
+  <link rel="stylesheet" href="./quickplay.css?v=quickplay-74">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <!-- Bot trash-talk proxy (bot-voice/worker.js). Empty = feature off. -->
   <meta name="bot-voice-endpoint" content="">
@@ -56,8 +57,13 @@
             <div id="weapon-list" class="weapon-list" role="radiogroup" aria-label="Choose weapon"></div>
           </section>
           <div class="play-actions">
+            <button id="quick-play" class="primary"><span>Quick Play</span><small>Find a public match · 2–6 players</small></button>
             <button id="create-room" class="primary"><span>Play with friends</span><small>Create a private room</small></button>
             <button id="practice" class="practice-button"><span>Practice</span><small>Play against bots</small></button>
+          </div>
+          <div id="queue-search" class="queue-search" hidden>
+            <span id="queue-search-status" role="status" aria-live="polite">Finding a public match…</span>
+            <button id="queue-cancel" type="button">Cancel</button>
           </div>
           <div class="room-panel" id="room-panel">
             <label for="room-code-input">Have a room code?</label>
@@ -112,9 +118,10 @@
 
     <section id="lobby" class="screen" aria-labelledby="lobby-title">
       <div class="modal-card lobby-card">
-        <div class="eyebrow">PRIVATE MATCH</div>
+        <div id="lobby-kind" class="eyebrow">PRIVATE MATCH</div>
         <h2 id="lobby-title">Private lobby</h2>
-        <p>Send this code to your friends. The host starts when everyone arrives.</p>
+        <p id="lobby-description">Send this code to your friends. The host starts when everyone arrives.</p>
+        <p id="queue-lobby-status" class="queue-lobby-status" role="status" aria-live="polite" hidden></p>
         <button id="copy-code" class="room-code" aria-label="Copy room code"><span id="room-code">------</span><small>CLICK TO COPY</small></button>
         <div id="player-list" class="player-list"></div>
         <button id="voice-lobby" class="voice-toggle voice-lobby" type="button" aria-pressed="false">🎙 VOICE OFF · V</button>
@@ -199,6 +206,6 @@
     </div>
     <div id="toast" role="status" aria-live="polite"></div>
   </main>
-  <script type="module" src="./game.js?v=mobile-respawn-73"></script>
+  <script type="module" src="./game.js?v=quickplay-74"></script>
 </body>
 </html>

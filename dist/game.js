@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { QuickPlayQueue, QUICKPLAY_PROTOCOL } from './quickplay.js?v=quickplay-74';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { detailPlaza } from './plaza.js?v=detail-6';
 import { createWoodenCharacter } from './wooden-character.js?v=grip-62';
@@ -507,7 +508,7 @@ function hostSnapshot(){state.players[state.id]=myPublic();const serverTime=perf
 
 let roomGeneration=0,roomConnecting=false,roomTimer=null;
 const pendingConnections=new Set();
-function setRoomConnecting(active){roomConnecting=active;for(const id of ['create-room','join-room','practice'])$(id).disabled=active}
+function setRoomConnecting(active){roomConnecting=active;for(const id of ['create-room','join-room','practice','quick-play','settings-open'])$(id).disabled=active}
 function watchRoomConnection(generation){clearTimeout(roomTimer);roomTimer=setTimeout(()=>{if(generation===roomGeneration&&roomConnecting){const ice=state.conn?.peerConnection?.iceConnectionState;leaveToHome(ice==='checking'||ice==='failed'?'Room found, but the direct connection failed. Try another network or browser.':'Connection timed out. Check the room code and try again.')}},12000)}
 function createRoom(){
   if(roomConnecting)return;
@@ -529,15 +530,15 @@ function acceptConnection(c){
   const unavailable=()=>state.mode!=='lobby'?'This match has started. Ask the host to return to the lobby.':state.connections.has(c.peer)?'Already connected to this room.':Object.keys(state.players).length>=6?'That room is full.':null;
   const reject=reason=>{try{c.send({t:'reject',reason})}catch{}setTimeout(()=>c.close(),150)};
   // Reserve capacity while WebRTC finishes opening, then recheck atomically on admission.
-  const reason=unavailable()||(Object.keys(state.players).length+pendingConnections.size>=6?'That room is full.':null);
+  const reason=(state.publicRoom&&c.metadata?.quickplay!==QUICKPLAY_PROTOCOL?'Join this public match using Quick Play.':null)||unavailable()||(Object.keys(state.players).length+pendingConnections.size>=6?'That room is full.':null);
   if(reason){c.on('open',()=>reject(reason));setTimeout(()=>c.close(),12000);return}
   pendingConnections.add(c);const timer=setTimeout(()=>{pendingConnections.delete(c);if(!admitted)c.close()},12000);
-  c.on('open',()=>{pendingConnections.delete(c);clearTimeout(timer);if(generation!==roomGeneration){c.close();return}const reason=unavailable();if(reason){reject(reason);return}admitted=true;
+  c.on('open',async()=>{if(state.publicRoom){try{await quickQueue.admit(c.peer)}catch{pendingConnections.delete(c);clearTimeout(timer);reject('Your queue reservation expired. Please try Quick Play again.');return}}pendingConnections.delete(c);clearTimeout(timer);if(generation!==roomGeneration||c.open===false){c.close();return}const reason=unavailable();if(reason){reject(reason);return}admitted=true;
     const requestedChar=c.metadata?.char,char=CHARACTERS.some(x=>x.id===requestedChar)?requestedChar:'wooden';state.connections.set(c.peer,c);state.players[c.peer]={id:c.peer,name:String(c.metadata?.name||'New Rot').slice(0,16),char,weapon:Object.hasOwn(WEAPONS,c.metadata?.weapon)?c.metadata.weapon:'ar',...spawnFor(state.connections.size),kills:0,deaths:0,health:100,alive:true,arsenal:{}};c.send({t:'welcome',id:c.peer,room:state.room,players:state.players,host:state.id,map:state.map});hostSnapshot();updateLobby()});
   c.on('data',d=>{if(generation===roomGeneration&&admitted&&state.connections.get(c.peer)===c)handleHostMessage(d,c.peer)});
   const cleanup=()=>{clearTimeout(timer);pendingConnections.delete(c);if(generation!==roomGeneration||state.connections.get(c.peer)!==c)return;state.connections.delete(c.peer);delete state.players[c.peer];hostSnapshot();updateLobby()};c.on('close',cleanup);c.on('error',()=>{cleanup();c.close()});
 }
-function wireClient(c,generation=roomGeneration){const current=()=>generation===roomGeneration&&state.conn===c;c.on('data',d=>{if(current())handleClientMessage(d)});c.on('close',()=>{if(current())leaveToHome('The host disconnected. Ask them to create a new room, then join again.')});c.on('error',err=>{if(current())peerError(err)})}
+function wireClient(c,generation=roomGeneration){const current=()=>generation===roomGeneration&&state.conn===c;c.on('data',d=>{if(current())handleClientMessage(d)});c.on('close',()=>{if(current())leaveToHome(state.publicRoom?'The public host disconnected. Hit Quick Play to find another match.':'The host disconnected. Ask them to create a new room, then join again.')});c.on('error',err=>{if(current())peerError(err)})}
 function handleHostMessage(d,from){
   if(!d||typeof d.t!=='string')return;
   if(d.t==='emote'&&state.players[from]){const p=state.players[from];if(d.active&&(!state.matchActive||!p.alive))return;p.emoteUntil=d.active?Date.now()+EMOTE_DURATION:0;if(d.active)p.equipped='bat';broadcast({t:'emote',id:from,until:p.emoteUntil});if(from===state.id)state.emoteUntil=p.emoteUntil}
@@ -557,6 +558,7 @@ function handleHostMessage(d,from){
 }
 function handleClientMessage(d){
   if(!d)return;
+  if(d.t==='queue'&&state.publicRoom){quickStartAt=Number(d.startAt)||0;renderQuickStatus()}
   if(d.t==='snapshot'&&Number.isFinite(d.serverTime)){state.netSnapshotTime=d.serverTime;state.netReceivedAt=performance.now();recordCombatHistory(d.serverTime,d.players||{})}
   if(d.t==='emote'){if(state.players[d.id])state.players[d.id].emoteUntil=d.until;if(d.id===state.id&&state.emoteUntil)state.emoteUntil=d.until}
   if(d.t==='builds')syncBuilds(d.builds||[]);
@@ -576,7 +578,7 @@ function handleClientMessage(d){
   if(d.t==='tracers')showTracers(d);
   if(d.t==='respawn'&&d.id===state.id)doRespawn(d.x,d.z,d.weapon)
   if(d.t==='end')finishMatch(d.players)
-  if(d.t==='lobby'){state.matchActive=false;state.players=d.players;enterLobby()}
+  if(d.t==='lobby'){state.matchActive=false;state.players=d.players;if(d.map)setMap(d.map);enterLobby()}
   if(d.t==='reject')leaveToHome(d.reason)
   if(d.t==='airdrop'&&state.matchActive)applyDropState(d.drop);
   if(d.t==='special')grantSpecial(d.type);
@@ -599,10 +601,80 @@ function peerError(err){const msg=err.type==='peer-unavailable'?'Room not found.
 function resetPeer(){roomGeneration++;clearTimeout(roomTimer);setRoomConnecting(false);pendingConnections.forEach(c=>c.close());pendingConnections.clear();stopVoice(false);if(state.peer&&!state.peer.destroyed)state.peer.destroy();state.peer=null;state.conn=null;state.connections.clear()}
 function setError(s){$('connection-error').textContent=s}
 
-function enterLobby(){clearTimeout(roomTimer);setRoomConnecting(false);state.mode='lobby';showScreen('lobby');$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby()}
+let quickQueue=null,quickTickTimer=null,quickStartAt=0,quickStarting=false,quickNextRoundAt=0;
+function stopQuickPlay(){quickQueue?.close();quickQueue=null;clearInterval(quickTickTimer);quickStartAt=quickNextRoundAt=0;quickStarting=false;state.publicRoom=false;$('queue-search').hidden=true}
+async function quickPlay(){
+  if(roomConnecting||state.mode!=='home')return;
+  resetPeer();state.publicRoom=true;state.practice=false;state.host=false;state.players={};setRoomConnecting(true);setError('');
+  $('queue-search').hidden=false;$('queue-search-status').textContent='Finding a public match…';
+  // GitHub Pages is static; send its users to the same-origin, server-backed site.
+  if(location.hostname==='hermosaprb.github.io'){stopQuickPlay();setRoomConnecting(false);location.href='https://rot-royale.hermosaprb.chatgpt.site/?quickplay=1';return}
+  const queue=new QuickPlayQueue({onExpired:message=>{if(quickQueue===queue)leaveToHome(message)}});quickQueue=queue;
+  const generation=roomGeneration;state.peer=new Peer();const peer=state.peer;wireVoicePeer(peer);watchRoomConnection(generation);
+  peer.on('connection',c=>{if(generation!==roomGeneration||!state.host){c.close();return}acceptConnection(c)});
+  peer.on('error',error=>{if(generation===roomGeneration)peerError(error)});
+  peer.on('open',async id=>{
+    if(generation!==roomGeneration)return;
+    try{
+      state.id=id;const room=await queue.join(id,state.map);
+      if(!room||quickQueue!==queue||generation!==roomGeneration)return;
+      state.host=room.host;state.room=room.code;setMap(room.map);
+      clearTimeout(roomTimer);watchRoomConnection(generation);
+      quickTickTimer=setInterval(updateQuickPlay,250);
+      if(room.host){seedSelf();enterLobby()}
+      else{const c=peer.connect(room.peer,{reliable:true,metadata:{name:safeName(),char:state.selectedChar,weapon:state.selectedWeapon,quickplay:QUICKPLAY_PROTOCOL}});state.conn=c;wireClient(c,generation);$('queue-search-status').textContent='Match found. Connecting to players…'}
+    }catch(error){if(quickQueue===queue)leaveToHome(error.message)}
+  });
+}
+function renderQuickStatus(){
+  if(!state.publicRoom)return;
+  const count=Object.keys(state.players).length,seconds=Math.max(0,Math.ceil((quickStartAt-Date.now())/1000));
+  $('queue-lobby-status').textContent=quickStarting?'Starting match…':quickStartAt?`Match starts in ${seconds}s · ${count}/6 players`:`Waiting for players · ${count}/6 connected`;
+}
+function updateQuickPlay(){
+  if(!state.publicRoom||!quickQueue)return;
+  if(state.mode==='results'){
+    if(state.host&&quickNextRoundAt&&Date.now()>=quickNextRoundAt){quickNextRoundAt=0;publicReturnLobby()}
+    return;
+  }
+  if(state.mode!=='lobby')return;
+  if(state.host&&!quickStarting){
+    const count=Object.keys(state.players).length;
+    if(count<2)quickStartAt=0;else if(!quickStartAt)quickStartAt=Date.now()+10000;
+    broadcast({t:'queue',startAt:quickStartAt});
+    if(quickStartAt&&Date.now()>=quickStartAt)startPublicMatch();
+  }
+  renderQuickStatus();
+}
+async function startPublicMatch(){
+  const queue=quickQueue;if(!queue||quickStarting)return;quickStarting=true;
+  try{
+    // Lock directory admission before the host sends the start packet.
+    await queue.phase('game',state.map);
+    if(quickQueue!==queue||state.mode!=='lobby')return;
+    if(Object.keys(state.players).length<2){await queue.phase('lobby',state.map);quickStartAt=0;return}
+    startMatch();quickStartAt=0;
+  }catch(error){if(quickQueue===queue)leaveToHome(error.message)}finally{if(quickQueue===queue)quickStarting=false}
+}
+function publicResults(){
+  $('play-again').disabled=true;$('play-again').textContent='Next arena in 8 seconds…';
+  if(state.host){quickNextRoundAt=Date.now()+8000;quickQueue?.phase('results',state.map).catch(()=>{})}
+}
+async function publicReturnLobby(){
+  if(!state.host||state.mode!=='results'||quickStarting)return;
+  const queue=quickQueue;if(!queue)return;quickStarting=true;
+  try{
+    const maps=['neon','piazza','factory'],map=maps[(maps.indexOf(state.map)+1)%maps.length];await queue.phase('lobby',map);
+    if(quickQueue!==queue)return;
+    setMap(map);Object.values(state.players).forEach(p=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true}));
+    quickStartAt=0;broadcast({t:'lobby',players:state.players,map});enterLobby();
+  }catch(error){if(quickQueue===queue)leaveToHome(error.message)}finally{if(quickQueue===queue)quickStarting=false}
+}
+
+function enterLobby(){clearTimeout(roomTimer);setRoomConnecting(false);state.mode='lobby';showScreen('lobby');$('queue-search').hidden=true;$('lobby-kind').textContent=state.publicRoom?'QUICK PLAY · PUBLIC MATCH':'PRIVATE MATCH';$('lobby-description').textContent=state.publicRoom?'Free-for-all · Starts automatically with 2–6 players. Maps rotate between rounds.':'Send this code to your friends. The host starts when everyone arrives.';$('copy-code').hidden=!!state.publicRoom;$('queue-lobby-status').hidden=!state.publicRoom;$('room-code').textContent=state.room;$('lobby-title').textContent=MAPS[state.map].name+' lobby';updateLobby();if(state.publicRoom)renderQuickStatus()}
 function updateLobby(){
   const ps=Object.values(state.players);$('player-list').innerHTML=ps.map((p,i)=>{const c=CHARACTERS.find(c=>c.id===p.char)||CHARACTERS[0];return `<div class="player-pill"><span class="dot"></span><strong>${escapeHtml(p.name)}${p.voice?' 🔊':''}</strong><span>${c.portrait?`<img class="lobby-portrait" src="${c.portrait}" alt="${c.name}">`:c.emoji}</span><small>${i===0?'HOST':WEAPONS[p.weapon]?.name||'PLAYER'}</small></div>`}).join('');
-  $('start-match').style.display=state.host?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
+  $('start-match').style.display=state.host&&!state.publicRoom?'block':'none';if(state.host){$('start-match').disabled=ps.length<2&&!state.practice;$('start-match').textContent=ps.length<2?'Waiting for another player…':`Start match · ${ps.length} players`}
 }
 function startMatch(){
   if(!state.host||state.matchActive||(!state.practice&&(state.mode!=='lobby'||Object.keys(state.players).length<2)))return;
@@ -1410,9 +1482,9 @@ function finishMatch(players){
   $('result-summary').textContent=me?`You placed #${myRank+1} · ${me.kills||0} eliminations · ${me.deaths||0} deaths`:'The final standings';
   $('podium').innerHTML=[1,0,2].map(rank=>{const p=ranked[rank];return p?`<div class="podium-player place-${rank+1}" style="--reveal-delay:${podiumSlots[rank].delay}s"><span class="podium-rank">${['1ST','2ND','3RD'][rank]}</span><strong>${escapeHtml(p.name)}${p.id===state.id?' <small>YOU</small>':''}</strong><span>${p.kills||0} eliminations</span></div>`:'<div class="podium-empty"></div>'}).join('');
   $('results-rest').innerHTML=ranked.slice(3).map((p,i)=>`<div class="result-runner"><span>#${i+4} ${escapeHtml(p.name)}</span><span>${p.kills||0} K · ${p.deaths||0} D</span></div>`).join('');
-  $('play-again').textContent=state.practice?'Back to loadout':'Return to lobby';showScreen('results');state.mode='results';prepareResultsStage(ranked);if(state.host)broadcast({t:'end',players:state.players});
+  $('play-again').disabled=false;$('play-again').textContent=state.practice?'Back to loadout':'Return to lobby';showScreen('results');state.mode='results';prepareResultsStage(ranked);if(state.host)broadcast({t:'end',players:state.players});if(state.publicRoom)publicResults();
 }
-function returnLobby(){if(state.practice){leaveToHome();return}Object.values(state.players).forEach(p=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true}));if(state.host)broadcast({t:'lobby',players:state.players});enterLobby()}
+function returnLobby(){if(state.publicRoom){publicReturnLobby();return}if(state.practice){leaveToHome();return}Object.values(state.players).forEach(p=>Object.assign(p,{kills:0,deaths:0,health:100,alive:true}));if(state.host)broadcast({t:'lobby',players:state.players});enterLobby()}
 
 function updateLeaderboard(){
   const ranked=Object.values(state.players).sort((a,b)=>(b.kills||0)-(a.kills||0)||(a.deaths||0)-(b.deaths||0)||String(a.name||'').localeCompare(String(b.name||'')));
@@ -1978,7 +2050,7 @@ function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDel
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function leaveToHome(message=''){banterOn=false;stopBotSpeech();stopBotTalk();queueMicrotask(updateVoiceUi);state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();releaseMouseCapture();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
+function leaveToHome(message=''){stopQuickPlay();banterOn=false;stopBotSpeech();stopBotTalk();queueMicrotask(updateVoiceUi);state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();releaseMouseCapture();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
 function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.jumpQueued=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
@@ -2014,6 +2086,7 @@ function requestMouseCapture(){
   if(touchMode){$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true;return}
   if(isPlaying())focusGame();
   if(!isPlaying()||state.capturePending||controls.isLocked)return;
+  if(globalThis.navigator?.userActivation?.isActive===false){$('control-hint').textContent='CLICK THE ARENA TO ENABLE MOUSE LOOK';$('control-hint').classList.remove('hidden');return}
   if(!$('game').requestPointerLock){useFallbackControls();return}
   state.capturePending=true;
   try{const pending=$('game').requestPointerLock();if(pending?.catch)pending.catch(useFallbackControls);setTimeout(()=>{if(state.capturePending&&!controls.isLocked)useFallbackControls()},1500)}catch{useFallbackControls()}
@@ -2127,6 +2200,8 @@ for(const id of VOICE_BUTTONS)$(id).onclick=toggleVoice;updateVoiceUi();
 $('settings-open').onclick=openSettings;$('settings-close').onclick=closeSettings;
 $('settings-reset').onclick=()=>{keybinds={...DEFAULT_BINDS};preferences={...DEFAULT_PREFERENCES};savePreferences();renderPreferences();rebindingAction=null;saveKeybinds();renderKeybinds();toast('Default controls restored')};
 $('keybind-list').onclick=e=>{const button=e.target.closest?.('[data-bind]');if(!button)return;rebindingAction=button.dataset.bind;renderKeybinds()};
+$('quick-play').onclick=quickPlay;$('queue-cancel').onclick=()=>leaveToHome();
+addEventListener('pagehide',()=>{if(state.publicRoom)leaveToHome('You left the public match. Hit Quick Play to find another.')});
 $('create-room').onclick=createRoom;$('join-room').onclick=joinRoom;$('room-code-input').onkeydown=e=>{if(e.key==='Enter')joinRoom()};$('practice').onclick=practice;$('start-match').onclick=startMatch;$('copy-code').onclick=async()=>{try{await navigator.clipboard.writeText(state.room);toast('Room code copied')}catch{toast(`Room code: ${state.room}`)}};$('leave-lobby').onclick=()=>leaveToHome();$('resume').onclick=()=>{showScreen(null);state.mode='game';requestMouseCapture()};$('leave-match').onclick=()=>leaveToHome();$('play-again').onclick=returnLobby;$('results-home').onclick=()=>leaveToHome();
 
 $('respawn-weapons').onclick=e=>{const button=e.target.closest('[data-respawn-weapon]');if(button)chooseRespawnWeapon(button.dataset.respawnWeapon)};

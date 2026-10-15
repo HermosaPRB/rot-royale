@@ -1,0 +1,15 @@
+.play-actions { grid-template-columns: 1fr 1fr; }
+#home .play-actions #quick-play { grid-column: 1 / -1; background: #ffd064; color: #123344; border-color: #af7b23; }
+#home .play-actions #quick-play:hover { background: #ffdc8a; }
+.queue-search { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid #709eb2; border-radius: 5px; background: #d7edf6; color: #123344; font-weight: 600; }
+.queue-search[hidden], .queue-lobby-status[hidden] { display: none; }
+#copy-code[hidden] { display: none; }
+.queue-search button { padding: 8px 14px; min-height: 40px; }
+.queue-lobby-status { font-weight: 800; color: #123344; font-size: 1.1rem; padding: 12px; background: #d7edf6; border-radius: 5px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .touch-device #home .play-actions { grid-template-columns: 1.2fr 1fr 1fr; }
+  .touch-device #home .play-actions #quick-play { grid-column: auto; }
+  .touch-device #home .play-actions button small { font-size: 9px; }
+  .touch-device .queue-search { margin: 2px 0; padding: 3px 7px; font-size: 11px; }
+  .touch-device .queue-search button { padding: 3px 9px; min-height: 30px; }
+}
