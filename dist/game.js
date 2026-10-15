@@ -372,7 +372,7 @@ function initWorld(){
   scene=new THREE.Scene();scene.background=new THREE.Color(0x82c9e8);scene.fog=new THREE.Fog(0x92c9dc,55,125);
   camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,160);camera.position.set(0,1.7,12);
   renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,touchMode?1.25:1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  controls=new PointerLockControls(camera,$('game'));controls.pointerSpeed=0;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;state.mouseX=state.mouseY=null;if(!isPlaying()){controls.unlock();return}$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
+  controls=new PointerLockControls(camera,$('game'));controls.pointerSpeed=0;camera.rotation.order='YXZ';controls.addEventListener('lock',()=>{state.capturePending=false;state.pointerLockFailed=false;state.mouseX=state.mouseY=null;if(!isPlaying()){releaseMouseCapture();return}$('control-hint').classList.add('hidden');$('capture-mouse').hidden=true});controls.addEventListener('unlock',()=>{if(isPlaying())pauseGame()});
   document.addEventListener('pointerlockerror',useFallbackControls);
   clock=new THREE.Clock();raycaster=new THREE.Raycaster();world=new THREE.Group();scene.add(world);
   const ambient=new THREE.HemisphereLight(0xfff3c4,0x6c645b,2.2);ambient.name='arena-ambient';scene.add(ambient);const sun=new THREE.DirectionalLight(0xfff1cf,3.2);sun.name='arena-sun';sun.position.set(-25,38,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;scene.add(sun);
@@ -671,7 +671,7 @@ function takeDamageResult(d){
     if(!state.alive)return;state.specialCharge=0;state.openHold=0;state.alive=false;state.health=0;state.respawnAt=Number.isFinite(d.respawnAt)&&d.respawnAt>0?d.respawnAt:Date.now()+3000;state.reloading=false;clearInput();
     if(me)Object.assign(me,{health:0,alive:false,respawnAt:state.respawnAt});
     state.pendingWeapon=state.selectedWeapon;if(me)me.nextWeapon=state.pendingWeapon;renderRespawnLoadout();
-    $('respawn').classList.add('active');updateRespawnCountdown();controls.unlock();updateCursor();
+    $('respawn').classList.add('active');updateRespawnCountdown();releaseMouseCapture();updateCursor();
   }else{state.health=d.health??me?.health??state.health;if(me)me.health=state.health;flashDamage(d.killer)}
   updateHud();
 }
@@ -1404,7 +1404,7 @@ function renderResults(now){
   resultsRenderer.render(resultsScene,resultsCamera);
 }
 function finishMatch(players){
-  if(!state.matchActive)return;state.matchActive=false;airdropPlan=null;resetAirdropState();clearInput();controls.unlock();$('hud').classList.remove('active');$('respawn').classList.remove('active');
+  if(!state.matchActive)return;state.matchActive=false;airdropPlan=null;resetAirdropState();clearInput();releaseMouseCapture();$('hud').classList.remove('active');$('respawn').classList.remove('active');
   const ranked=Object.values(players||state.players).sort((a,b)=>(b.kills||0)-(a.kills||0)||(a.deaths||0)-(b.deaths||0)),myRank=ranked.findIndex(p=>p.id===state.id),me=ranked[myRank];
   $('result-title').textContent=myRank===0?'You take the crown.':'Good game. Run it back?';
   $('result-summary').textContent=me?`You placed #${myRank+1} · ${me.kills||0} eliminations · ${me.deaths||0} deaths`:'The final standings';
@@ -1978,10 +1978,16 @@ function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDel
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,Number(v)||0))}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function leaveToHome(message=''){banterOn=false;stopBotSpeech();stopBotTalk();queueMicrotask(updateVoiceUi);state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();controls.unlock();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
+function leaveToHome(message=''){banterOn=false;stopBotSpeech();stopBotTalk();queueMicrotask(updateVoiceUi);state.matchActive=false;state.practice=false;airdropPlan=null;resetAirdropState();clearInput();releaseMouseCapture();resetPeer();state.players={};playerMeshes.forEach(m=>world.remove(m));playerMeshes.clear();$('hud').classList.remove('active');$('respawn').classList.remove('active');showScreen('home');state.mode='home';document.querySelectorAll('[data-weapon]').forEach(b=>{b.classList.toggle('selected',b.dataset.weapon===state.selectedWeapon);b.setAttribute('aria-checked',b.dataset.weapon===state.selectedWeapon)});updateLobbyPreview();setError(message)}
 function isPlaying(){return state.matchActive&&state.alive&&state.mode==='game'}
 function clearInput(){stopEmote();state.slideUntil=0;state.landingGrace=0;slideView=landingKick=shotShake=0;$('speed-lines').classList.remove('active');$('target-card').classList.remove('visible');state.buildHeld=false;state.buildMode=false;if(buildGhost)buildGhost.visible=false;$('build-hint').textContent='';state.keys={};state.climbing=null;$('ladder-hint').textContent='';state.velocityX=state.velocityZ=state.hopChain=0;state.onRamp=false;state.jumpQueued=false;state.fireHeld=false;state.mouseX=null;state.mouseY=null;state.mouseOver=false;state.meleeStart=-Infinity;state.switchStart=state.inspectStart=-Infinity;state.switchPending=null;state.switchSwapped=false;weaponMotion.yaw=weaponMotion.pitch=null;weaponMotion.kick=0;weaponMotion.dip=weaponMotion.aimKick=0;resetAim()}
 function focusGame(){$('game').focus({preventScroll:true})}
+function releaseMouseCapture(){
+  // Touch browsers may not implement Pointer Lock at all. Never let releasing
+  // an optional desktop input feature interrupt death/respawn or room cleanup.
+  if(!document.pointerLockElement||typeof document.exitPointerLock!=='function')return;
+  try{const result=document.exitPointerLock();result?.catch?.(()=>{})}catch{}
+}
 function updateCursor(){$('game').style.cursor=isPlaying()?'none':'auto';$('capture-mouse').hidden=touchMode||!isPlaying()||controls.isLocked;updateTouchUi()}
 function useFallbackControls(){state.capturePending=false;state.pointerLockFailed=true;$('control-hint').textContent='MOUSE CAPTURE BLOCKED · OPEN THIS URL IN CHROME / EDGE FOR UNLIMITED MOUSE LOOK · ← / → ALSO TURN';$('control-hint').classList.remove('hidden')}
 function handleMouseLook(e){
@@ -2012,7 +2018,7 @@ function requestMouseCapture(){
   state.capturePending=true;
   try{const pending=$('game').requestPointerLock();if(pending?.catch)pending.catch(useFallbackControls);setTimeout(()=>{if(state.capturePending&&!controls.isLocked)useFallbackControls()},1500)}catch{useFallbackControls()}
 }
-function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');if(controls.isLocked)controls.unlock()}
+function pauseGame(){if(!state.matchActive)return;state.mode='pause';clearInput();showScreen('pause');releaseMouseCapture()}
 
 // Independent pointer IDs let movement, look, fire and jump work simultaneously.
 const touchMode=!!globalThis.matchMedia?.('(pointer: coarse)').matches;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const source=fs.readFileSync(new URL('../dist/game.js',import.meta.url),'utf8');
 const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',innerHTML:'',classList:{remove(){}},style:{setProperty(k,v){this[k]=v}}});return nodes.get(id)};
 const ctx=vm.createContext({$:node,state:{matchActive:true,practice:true,host:false,id:'b',alive:false,respawnAt:3000},Date:{now:()=>1000},Math,Object,airdropPlan:null,podiumSlots:[{delay:1.7},{delay:.95},{delay:.2}],resetAirdropState(){},clearInput(){},controls:{unlock(){}},showScreen(){},prepareResultsStage(p){ctx.ranked=p},escapeHtml:s=>s.replaceAll('<','&lt;'),broadcast(){}});
+ctx.releaseMouseCapture=()=>{};
 vm.runInContext(source.slice(source.indexOf('function finishMatch('),source.indexOf('\nfunction returnLobby',source.indexOf('function finishMatch('))),ctx);
 vm.runInContext(source.slice(source.indexOf('function updateRespawnCountdown('),source.indexOf('\nfunction renderRespawnLoadout(')),ctx);
 ctx.players={a:{id:'a',name:'Winner',kills:8,deaths:2,char:'neegy'},b:{id:'b',name:'<You>',kills:8,deaths:4,char:'wooden'}};
